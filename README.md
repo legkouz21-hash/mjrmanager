@@ -57,7 +57,7 @@ cd mjrmanager
 
 ## 👨‍💻 Автор
 
-**M1le** &&
+**M1le** &
 **Kiro ai**
 
 
