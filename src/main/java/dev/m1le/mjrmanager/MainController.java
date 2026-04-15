@@ -554,9 +554,21 @@ public class MainController implements Initializable {
         tabContextMenu.getItems().addAll(viewSourceItem, viewBytecodeItem);
         tab.setContextMenu(tabContextMenu);
 
+        HBox searchBar = buildSearchBar(codeArea);
+        HBox replaceBar = buildReplaceBar(codeArea, searchBar);
+        TextField searchField2 = (TextField) searchBar.getChildren().get(1);
+
         codeArea.setOnKeyPressed(event -> {
             if (event.isControlDown()) {
                 switch (event.getCode()) {
+                    case F -> {
+                        showSearchBar(searchBar, replaceBar, searchField2, false);
+                        event.consume();
+                    }
+                    case H -> {
+                        showSearchBar(searchBar, replaceBar, searchField2, true);
+                        event.consume();
+                    }
                     case C -> {
                         String selected = codeArea.getSelectedText();
                         if (!selected.isEmpty()) {
@@ -588,6 +600,13 @@ public class MainController implements Initializable {
                     }
                 }
             }
+            if (event.getCode() == javafx.scene.input.KeyCode.ESCAPE) {
+                searchBar.setVisible(false);
+                searchBar.setManaged(false);
+                replaceBar.setVisible(false);
+                replaceBar.setManaged(false);
+                codeArea.requestFocus();
+            }
         });
 
         codeArea.textProperty().addListener((obs, old, newText) -> {
@@ -597,7 +616,7 @@ public class MainController implements Initializable {
             openedTab.setDecompiledSource(newText);
         });
 
-        VBox container = new VBox(codeArea);
+        VBox container = new VBox(searchBar, replaceBar, codeArea);
         VBox.setVgrow(codeArea, Priority.ALWAYS);
 
         Canvas minimap = buildMinimap(codeArea);
@@ -606,6 +625,191 @@ public class MainController implements Initializable {
 
         tab.setContent(editorWithMinimap);
         return tab;
+    }
+
+    private void showSearchBar(HBox searchBar, HBox replaceBar, TextField searchField, boolean withReplace) {
+        searchBar.setVisible(true);
+        searchBar.setManaged(true);
+        if (withReplace) {
+            replaceBar.setVisible(true);
+            replaceBar.setManaged(true);
+        } else {
+            replaceBar.setVisible(false);
+            replaceBar.setManaged(false);
+        }
+        Platform.runLater(searchField::requestFocus);
+    }
+
+    private HBox buildSearchBar(CodeArea codeArea) {
+        HBox bar = new HBox(6);
+        bar.setStyle("-fx-background-color: #21252b; -fx-padding: 4 8 4 8; -fx-border-color: #181a1f; -fx-border-width: 0 0 1 0;");
+        bar.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        bar.setVisible(false);
+        bar.setManaged(false);
+
+        Label label = new Label("Поиск:");
+        label.setStyle("-fx-text-fill: #636d83; -fx-font-size: 12px;");
+
+        TextField field = new TextField();
+        field.setPromptText("Найти...");
+        field.setPrefWidth(220);
+        field.setStyle("-fx-background-color: #1d2026; -fx-text-fill: #abb2bf; -fx-border-color: #3a3f4b; -fx-border-radius: 4; -fx-background-radius: 4; -fx-padding: 3 6 3 6; -fx-font-size: 12px;");
+
+        Label matchLabel = new Label("");
+        matchLabel.setStyle("-fx-text-fill: #636d83; -fx-font-size: 11px;");
+
+        Button btnPrev = makeBarButton("◀", "Предыдущее (Shift+Enter)");
+        Button btnNext = makeBarButton("▶", "Следующее (Enter)");
+        Button btnClose = makeBarButton("✕", "Закрыть (Esc)");
+        btnClose.setStyle(btnClose.getStyle() + "-fx-text-fill: #e06c75;");
+
+        CheckBox caseBox = new CheckBox("Aa");
+        caseBox.setStyle("-fx-text-fill: #abb2bf; -fx-font-size: 11px;");
+
+        List<Integer> matches = new ArrayList<>();
+        int[] currentMatch = {-1};
+
+        Runnable doSearch = () -> {
+            matches.clear();
+            currentMatch[0] = -1;
+            String query = field.getText();
+            String text = codeArea.getText();
+            if (query.isEmpty()) {
+                matchLabel.setText("");
+                field.setStyle(field.getStyle().replace("-fx-border-color: #e06c75;", "-fx-border-color: #3a3f4b;"));
+                return;
+            }
+            String searchText = caseBox.isSelected() ? text : text.toLowerCase();
+            String searchQuery = caseBox.isSelected() ? query : query.toLowerCase();
+            int idx = 0;
+            while ((idx = searchText.indexOf(searchQuery, idx)) != -1) {
+                matches.add(idx);
+                idx += searchQuery.length();
+            }
+            if (matches.isEmpty()) {
+                matchLabel.setText("Не найдено");
+                field.setStyle(field.getStyle().replace("-fx-border-color: #3a3f4b;", "-fx-border-color: #e06c75;"));
+            } else {
+                field.setStyle(field.getStyle().replace("-fx-border-color: #e06c75;", "-fx-border-color: #3a3f4b;"));
+                currentMatch[0] = 0;
+                codeArea.selectRange(matches.get(0), matches.get(0) + query.length());
+                codeArea.requestFollowCaret();
+                matchLabel.setText("1 / " + matches.size());
+            }
+        };
+
+        Runnable goNext = () -> {
+            if (matches.isEmpty()) return;
+            currentMatch[0] = (currentMatch[0] + 1) % matches.size();
+            int pos = matches.get(currentMatch[0]);
+            codeArea.selectRange(pos, pos + field.getText().length());
+            codeArea.requestFollowCaret();
+            matchLabel.setText((currentMatch[0] + 1) + " / " + matches.size());
+        };
+
+        Runnable goPrev = () -> {
+            if (matches.isEmpty()) return;
+            currentMatch[0] = (currentMatch[0] - 1 + matches.size()) % matches.size();
+            int pos = matches.get(currentMatch[0]);
+            codeArea.selectRange(pos, pos + field.getText().length());
+            codeArea.requestFollowCaret();
+            matchLabel.setText((currentMatch[0] + 1) + " / " + matches.size());
+        };
+
+        field.textProperty().addListener((obs, o, n) -> doSearch.run());
+        caseBox.selectedProperty().addListener((obs, o, n) -> doSearch.run());
+        btnNext.setOnAction(e -> goNext.run());
+        btnPrev.setOnAction(e -> goPrev.run());
+
+        field.setOnKeyPressed(e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.ENTER) {
+                if (e.isShiftDown()) goPrev.run(); else goNext.run();
+                e.consume();
+            }
+            if (e.getCode() == javafx.scene.input.KeyCode.ESCAPE) {
+                bar.setVisible(false);
+                bar.setManaged(false);
+                codeArea.requestFocus();
+            }
+        });
+
+        btnClose.setOnAction(e -> {
+            bar.setVisible(false);
+            bar.setManaged(false);
+            codeArea.requestFocus();
+        });
+
+        bar.getChildren().addAll(label, field, btnPrev, btnNext, matchLabel, caseBox, btnClose);
+        return bar;
+    }
+
+    private HBox buildReplaceBar(CodeArea codeArea, HBox searchBar) {
+        HBox bar = new HBox(6);
+        bar.setStyle("-fx-background-color: #21252b; -fx-padding: 4 8 4 8; -fx-border-color: #181a1f; -fx-border-width: 0 0 1 0;");
+        bar.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        bar.setVisible(false);
+        bar.setManaged(false);
+
+        Label label = new Label("Замена:");
+        label.setStyle("-fx-text-fill: #636d83; -fx-font-size: 12px;");
+
+        TextField replaceField = new TextField();
+        replaceField.setPromptText("Заменить на...");
+        replaceField.setPrefWidth(220);
+        replaceField.setStyle("-fx-background-color: #1d2026; -fx-text-fill: #abb2bf; -fx-border-color: #3a3f4b; -fx-border-radius: 4; -fx-background-radius: 4; -fx-padding: 3 6 3 6; -fx-font-size: 12px;");
+
+        Button btnReplace = makeBarButton("Заменить", "Заменить текущее");
+        Button btnReplaceAll = makeBarButton("Заменить всё", "Заменить все вхождения");
+
+        btnReplace.setOnAction(e -> {
+            TextField searchField = (TextField) searchBar.getChildren().get(1);
+            String query = searchField.getText();
+            String replacement = replaceField.getText();
+            if (query.isEmpty()) return;
+            String selected = codeArea.getSelectedText();
+            if (selected.equalsIgnoreCase(query)) {
+                int start = codeArea.getSelection().getStart();
+                codeArea.replaceSelection(replacement);
+                codeArea.selectRange(start, start + replacement.length());
+            }
+            searchField.fireEvent(new javafx.scene.input.KeyEvent(
+                javafx.scene.input.KeyEvent.KEY_PRESSED, "", "", javafx.scene.input.KeyCode.ENTER, false, false, false, false));
+        });
+
+        btnReplaceAll.setOnAction(e -> {
+            TextField searchField = (TextField) searchBar.getChildren().get(1);
+            String query = searchField.getText();
+            String replacement = replaceField.getText();
+            if (query.isEmpty()) return;
+            String text = codeArea.getText();
+            int count = 0;
+            int idx = text.indexOf(query);
+            while (idx != -1) { count++; idx = text.indexOf(query, idx + query.length()); }
+            if (count == 0) { showInfo("Замена", "Вхождений не найдено"); return; }
+            String newText = text.replace(query, replacement);
+            codeArea.replaceText(newText);
+            showInfo("Замена", "Заменено вхождений: " + count);
+        });
+
+        replaceField.setOnKeyPressed(e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.ESCAPE) {
+                bar.setVisible(false);
+                bar.setManaged(false);
+                codeArea.requestFocus();
+            }
+        });
+
+        bar.getChildren().addAll(label, replaceField, btnReplace, btnReplaceAll);
+        return bar;
+    }
+
+    private Button makeBarButton(String text, String tooltip) {
+        Button btn = new Button(text);
+        btn.setStyle("-fx-background-color: #2c313a; -fx-text-fill: #abb2bf; -fx-border-color: transparent; -fx-background-radius: 4; -fx-cursor: hand; -fx-font-size: 11px; -fx-padding: 3 8 3 8;");
+        btn.setTooltip(new Tooltip(tooltip));
+        btn.setOnMouseEntered(e -> btn.setStyle(btn.getStyle().replace("#2c313a", "#3a3f4b")));
+        btn.setOnMouseExited(e -> btn.setStyle(btn.getStyle().replace("#3a3f4b", "#2c313a")));
+        return btn;
     }
 
     private Canvas buildMinimap(CodeArea codeArea) {

@@ -49,22 +49,16 @@ public class JarService {
         Map<String, TreeItem<JarEntryNode>> resourcePackageMap = new TreeMap<>();
         List<InnerClassEntry> innerClasses = new ArrayList<>();
 
-        int totalEntries = 0;
-        int classCount = 0;
-        int innerClassCount = 0;
-
-        try (JarInputStream jis = new JarInputStream(new FileInputStream(jarFile))) {
-            JarEntry entry;
-            while ((entry = jis.getNextJarEntry()) != null) {
-                totalEntries++;
+        try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(new FileInputStream(jarFile))) {
+            java.util.zip.ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
                 String entryName = entry.getName();
-                byte[] bytes = jis.readAllBytes();
+                byte[] bytes = entry.isDirectory() ? new byte[0] : zis.readAllBytes();
                 jarEntries.put(entryName, bytes);
 
                 if (entry.isDirectory()) continue;
 
                 if (entryName.endsWith(".class")) {
-                    classCount++;
                     String className = getSimpleName(entryName).replace(".class", "");
                     String packagePath = getPackagePath(entryName);
 
@@ -73,7 +67,6 @@ public class JarService {
                     TreeItem<JarEntryNode> classItem = new TreeItem<>(classNode);
 
                     if (isInnerClass(className)) {
-                        innerClassCount++;
                         innerClasses.add(new InnerClassEntry(className, entryName, packagePath, classItem));
                     } else {
                         TreeItem<JarEntryNode> parent = packagePath.isEmpty()
@@ -93,6 +86,7 @@ public class JarService {
                             : getOrCreatePackageNode(packagePath, resourcePackageMap, resourcesRoot);
                     parent.getChildren().add(resItem);
                 }
+                zis.closeEntry();
             }
         }
         
@@ -122,14 +116,50 @@ public class JarService {
     }
 
     public void saveJar(File outputFile) throws IOException {
-        try (JarOutputStream jos = new JarOutputStream(new FileOutputStream(outputFile))) {
+        Manifest manifest = buildManifest();
+
+        try (JarOutputStream jos = new JarOutputStream(new FileOutputStream(outputFile), manifest)) {
+            jos.setLevel(java.util.zip.Deflater.DEFAULT_COMPRESSION);
+
             for (Map.Entry<String, byte[]> entry : jarEntries.entrySet()) {
-                JarEntry jarEntry = new JarEntry(entry.getKey());
+                String name = entry.getKey();
+
+                if (name.equalsIgnoreCase("META-INF/MANIFEST.MF")) continue;
+
+                byte[] data = entry.getValue();
+
+                JarEntry jarEntry = new JarEntry(name);
+
+                if (data == null || data.length == 0) {
+                    jarEntry.setMethod(JarEntry.STORED);
+                    jarEntry.setSize(0);
+                    jarEntry.setCrc(0);
+                } else if (name.endsWith(".class") || name.endsWith(".jar") || name.endsWith(".png")
+                        || name.endsWith(".jpg") || name.endsWith(".gif") || name.endsWith(".zip")) {
+                    jarEntry.setMethod(JarEntry.DEFLATED);
+                } else {
+                    jarEntry.setMethod(JarEntry.DEFLATED);
+                }
+
                 jos.putNextEntry(jarEntry);
-                jos.write(entry.getValue());
+                if (data != null && data.length > 0) {
+                    jos.write(data);
+                }
                 jos.closeEntry();
             }
         }
+    }
+
+    private Manifest buildManifest() throws IOException {
+        byte[] manifestBytes = jarEntries.get("META-INF/MANIFEST.MF");
+        if (manifestBytes != null && manifestBytes.length > 0) {
+            try (ByteArrayInputStream bais = new ByteArrayInputStream(manifestBytes)) {
+                return new Manifest(bais);
+            }
+        }
+        Manifest manifest = new Manifest();
+        manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+        return manifest;
     }
 
     public void saveJarInPlace() throws IOException {
