@@ -108,6 +108,7 @@ public class DecompilerService {
             Map<String, String> options = new HashMap<>();
             options.put("showversion", "false");
             options.put("silent", "true");
+            options.put("comments", "false");
 
             CfrDriver driver = new CfrDriver.Builder()
                     .withOutputSink(sinkFactory)
@@ -120,10 +121,41 @@ public class DecompilerService {
             Files.deleteIfExists(tempDir);
 
             String output = result.toString().trim();
-            return output.isEmpty() ? "Decompilation completed but no output was generated" : output;
+            if (output.isEmpty()) {
+                return generateBasicClassInfo(className, bytecode);
+            }
+            return decodeUnicodeEscapes(output);
         } catch (Exception e) {
-            return "Decompilation error: " + e.getMessage();
+            return "Decompilation error: " + e.getMessage() + "\n\n" + generateBasicClassInfo(className, bytecode);
         }
+    }
+
+    private String generateBasicClassInfo(String className, byte[] bytecode) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("// Декомпиляция не удалась, показана базовая информация о классе\n\n");
+        
+        String simpleClassName = className.contains("/") 
+            ? className.substring(className.lastIndexOf('/') + 1).replace(".class", "")
+            : className.replace(".class", "");
+        
+        String packageName = "";
+        if (className.contains("/")) {
+            packageName = className.substring(0, className.lastIndexOf('/')).replace('/', '.');
+            sb.append("package ").append(packageName).append(";\n\n");
+        }
+        
+        sb.append("public class ").append(simpleClassName).append(" {\n");
+        sb.append("    // Размер байткода: ").append(bytecode.length).append(" байт\n");
+        sb.append("    // Полный путь: ").append(className).append("\n");
+        sb.append("    \n");
+        sb.append("    // Декомпиляция не удалась.\n");
+        sb.append("    // Возможные причины:\n");
+        sb.append("    // - Обфусцированный код\n");
+        sb.append("    // - Нестандартный байткод\n");
+        sb.append("    // - Поврежденный .class файл\n");
+        sb.append("}\n");
+        
+        return sb.toString();
     }
 
     private String decodeUnicodeEscapes(String source) {

@@ -13,6 +13,8 @@ import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
+import javafx.scene.control.ButtonBar;
+import javafx.geometry.Insets;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
 
@@ -29,8 +31,9 @@ public class MainController implements Initializable {
     @FXML private Label jarNameLabel;
     @FXML private VBox welcomePane;
     @FXML private Button btnSaveJar;
-    @FXML private Button btnSaveAs;
     @FXML private Button btnCompile;
+    @FXML private Button btnGlobalSearch;
+    @FXML private Button btnManifest;
     @FXML private TextField searchField;
     @FXML private Menu menuRecent;
     @FXML private SplitPane mainSplit;
@@ -44,6 +47,9 @@ public class MainController implements Initializable {
     private final CompilerService   compilerService   = new CompilerService();
     private final SettingsService   settingsService   = new SettingsService();
     private final DebugLogger       logger            = DebugLogger.getInstance();
+    private final SearchService     searchService     = new SearchService(decompilerService);
+    private final ManifestService   manifestService   = new ManifestService();
+    private final ExportService     exportService     = new ExportService(decompilerService);
 
     private final Map<String, OpenedTab> openedTabs = new HashMap<>();
 
@@ -69,6 +75,7 @@ public class MainController implements Initializable {
         setupFileTree();
         setupTabPane();
         setupConsole();
+        setupDragAndDrop();
         updateButtonStates(false);
         refreshRecentMenu();
 
@@ -100,6 +107,40 @@ public class MainController implements Initializable {
             }
         });
         progressBar.setCursor(javafx.scene.Cursor.HAND);
+    }
+
+    private void setupDragAndDrop() {
+        rootPane.setOnDragOver(event -> {
+            if (event.getDragboard().hasFiles()) {
+                List<File> files = event.getDragboard().getFiles();
+                if (files.size() == 1) {
+                    File file = files.get(0);
+                    String name = file.getName().toLowerCase();
+                    if (name.endsWith(".jar") || name.endsWith(".war") || name.endsWith(".ear")) {
+                        event.acceptTransferModes(javafx.scene.input.TransferMode.COPY);
+                    }
+                }
+            }
+            event.consume();
+        });
+
+        rootPane.setOnDragDropped(event -> {
+            boolean success = false;
+            if (event.getDragboard().hasFiles()) {
+                List<File> files = event.getDragboard().getFiles();
+                if (files.size() == 1) {
+                    File file = files.get(0);
+                    String name = file.getName().toLowerCase();
+                    if (name.endsWith(".jar") || name.endsWith(".war") || name.endsWith(".ear")) {
+                        loadJar(file);
+                        success = true;
+                        logger.info("JAR файл загружен через drag-and-drop: " + file.getName());
+                    }
+                }
+            }
+            event.setDropCompleted(success);
+            event.consume();
+        });
     }
 
     @FXML
@@ -590,8 +631,9 @@ public class MainController implements Initializable {
 
     private void updateButtonStates(boolean jarLoaded) {
         btnSaveJar.setDisable(!jarLoaded);
-        btnSaveAs.setDisable(!jarLoaded);
         btnCompile.setDisable(!jarLoaded);
+        btnGlobalSearch.setDisable(!jarLoaded);
+        btnManifest.setDisable(!jarLoaded);
     }
 
     private void setStatus(String message, boolean loading) {
@@ -706,8 +748,381 @@ public class MainController implements Initializable {
                 "  • Декомпиляция .class файлов\n" +
                 "  • Редактирование с подсветкой синтаксиса\n" +
                 "  • Перекомпиляция и сохранение в JAR\n" +
-                "  • История последних файлов"
+                "  • История последних файлов\n" +
+                "  • Глобальный поиск по содержимому\n" +
+                "  • Редактирование манифеста\n" +
+                "  • Добавление/удаление файлов\n" +
+                "  • Экспорт в исходники"
         );
         alert.showAndWait();
+    }
+
+    // ==================== ГЛОБАЛЬНЫЙ ПОИСК ====================
+
+    @FXML
+    private void onGlobalSearch() {
+        if (jarService.getCurrentJarFile() == null) {
+            showError("Ошибка", "Сначала откройте JAR файл");
+            return;
+        }
+
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Глобальный поиск");
+        dialog.setHeaderText("Поиск по содержимому всех классов");
+
+        ButtonType searchButtonType = new ButtonType("Найти", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(searchButtonType, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new javafx.geometry.Insets(20, 150, 10, 10));
+
+        TextField queryField = new TextField();
+        queryField.setPromptText("Поисковый запрос");
+        queryField.setPrefWidth(300);
+
+        CheckBox caseSensitiveBox = new CheckBox("Учитывать регистр");
+        CheckBox regexBox = new CheckBox("Регулярное выражение");
+
+        grid.add(new Label("Запрос:"), 0, 0);
+        grid.add(queryField, 1, 0);
+        grid.add(caseSensitiveBox, 1, 1);
+        grid.add(regexBox, 1, 2);
+
+        dialog.getDialogPane().setContent(grid);
+        Platform.runLater(queryField::requestFocus);
+
+        Optional<ButtonType> result = dialog.showAndWait();
+
+        if (result.isPresent() && result.get() == searchButtonType) {
+            String query = queryField.getText().trim();
+            if (query.isEmpty()) {
+                showError("Ошибка", "Введите поисковый запрос");
+                return;
+            }
+
+            performGlobalSearch(query, caseSensitiveBox.isSelected(), regexBox.isSelected());
+        }
+    }
+
+    private void performGlobalSearch(String query, boolean caseSensitive, boolean useRegex) {
+        setStatus("Поиск: " + query + "...", true);
+        logger.info("Глобальный поиск: " + query);
+
+        Task<List<SearchService.SearchResult>> task = new Task<>() {
+            @Override
+            protected List<SearchService.SearchResult> call() {
+                return searchService.searchInContent(
+                    query, jarService.getJarEntries(), caseSensitive, useRegex
+                );
+            }
+        };
+
+        task.setOnSucceeded(e -> {
+            List<SearchService.SearchResult> results = task.getValue();
+            setStatus("Найдено: " + results.size() + " совпадений", false);
+            showSearchResults(query, results);
+        });
+
+        task.setOnFailed(e -> {
+            setStatus("Ошибка поиска", false);
+            logger.error("Ошибка глобального поиска", task.getException());
+            showError("Ошибка поиска", task.getException().getMessage());
+        });
+
+        new Thread(task, "global-search").start();
+    }
+
+    private void showSearchResults(String query, List<SearchService.SearchResult> results) {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Результаты поиска");
+        dialog.setHeaderText("Найдено совпадений: " + results.size() + " для запроса: \"" + query + "\"");
+
+        ListView<SearchService.SearchResult> listView = new ListView<>();
+        listView.getItems().addAll(results);
+        listView.setPrefSize(700, 400);
+
+        listView.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(SearchService.SearchResult item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                } else {
+                    setText(item.toString());
+                }
+            }
+        });
+
+        listView.setOnMouseClicked(event -> {
+            if (event.getClickCount() == 2) {
+                SearchService.SearchResult selected = listView.getSelectionModel().getSelectedItem();
+                if (selected != null) {
+                    dialog.close();
+                    openFileFromSearch(selected);
+                }
+            }
+        });
+
+        VBox content = new VBox(10);
+        content.getChildren().addAll(
+            new Label("Дважды кликните на результат для открытия файла"),
+            listView
+        );
+
+        dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.showAndWait();
+    }
+
+    private void openFileFromSearch(SearchService.SearchResult result) {
+        TreeItem<JarEntryNode> root = fileTree.getRoot();
+        TreeItem<JarEntryNode> found = findTreeItem(root, result.filePath);
+        
+        if (found != null && found.getValue() != null) {
+            fileTree.getSelectionModel().select(found);
+            openClassInEditor(found.getValue());
+        }
+    }
+
+    private TreeItem<JarEntryNode> findTreeItem(TreeItem<JarEntryNode> item, String path) {
+        if (item.getValue() != null && path.equals(item.getValue().getFullPath())) {
+            return item;
+        }
+        for (TreeItem<JarEntryNode> child : item.getChildren()) {
+            TreeItem<JarEntryNode> result = findTreeItem(child, path);
+            if (result != null) return result;
+        }
+        return null;
+    }
+
+    // ==================== МАНИФЕСТ ====================
+
+    @FXML
+    private void onViewManifest() {
+        if (jarService.getCurrentJarFile() == null) {
+            showError("Ошибка", "Сначала откройте JAR файл");
+            return;
+        }
+
+        String content = manifestService.getManifestContent(jarService.getJarEntries());
+        
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("Манифест JAR");
+        alert.setHeaderText("META-INF/MANIFEST.MF");
+
+        TextArea textArea = new TextArea(content);
+        textArea.setEditable(false);
+        textArea.setWrapText(false);
+        textArea.setFont(javafx.scene.text.Font.font("Monospace", 12));
+        textArea.setPrefSize(600, 400);
+
+        alert.getDialogPane().setContent(textArea);
+        alert.showAndWait();
+    }
+
+    @FXML
+    private void onEditManifest() {
+        if (jarService.getCurrentJarFile() == null) {
+            showError("Ошибка", "Сначала откройте JAR файл");
+            return;
+        }
+
+        String content = manifestService.getManifestContent(jarService.getJarEntries());
+
+        Dialog<String> dialog = new Dialog<>();
+        dialog.setTitle("Редактирование манифеста");
+        dialog.setHeaderText("META-INF/MANIFEST.MF");
+
+        ButtonType saveButtonType = new ButtonType("Сохранить", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
+
+        TextArea textArea = new TextArea(content);
+        textArea.setWrapText(false);
+        textArea.setFont(javafx.scene.text.Font.font("Monospace", 12));
+        textArea.setPrefSize(600, 400);
+
+        VBox vbox = new VBox(10);
+        vbox.getChildren().addAll(
+            new Label("Редактируйте манифест. Формат: Ключ: Значение"),
+            textArea
+        );
+
+        dialog.getDialogPane().setContent(vbox);
+
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == saveButtonType) {
+                return textArea.getText();
+            }
+            return null;
+        });
+
+        Optional<String> result = dialog.showAndWait();
+
+        result.ifPresent(newContent -> {
+            try {
+                manifestService.updateManifest(jarService.getJarEntries(), newContent);
+                showInfo("Успех", "Манифест обновлён. Не забудьте сохранить JAR.");
+                logger.info("Манифест обновлён");
+            } catch (Exception e) {
+                showError("Ошибка", "Не удалось обновить манифест: " + e.getMessage());
+                logger.error("Ошибка обновления манифеста", e);
+            }
+        });
+    }
+
+    // ==================== ДОБАВЛЕНИЕ/УДАЛЕНИЕ ФАЙЛОВ ====================
+
+    @FXML
+    private void onAddFiles() {
+        if (jarService.getCurrentJarFile() == null) {
+            showError("Ошибка", "Сначала откройте JAR файл");
+            return;
+        }
+
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("Добавить файлы в JAR");
+        Stage stage = (Stage) fileTree.getScene().getWindow();
+        List<File> files = chooser.showOpenMultipleDialog(stage);
+
+        if (files == null || files.isEmpty()) return;
+
+        TextInputDialog pathDialog = new TextInputDialog("");
+        pathDialog.setTitle("Путь в JAR");
+        pathDialog.setHeaderText("Укажите путь внутри JAR (например: com/example/)");
+        pathDialog.setContentText("Путь:");
+
+        Optional<String> pathResult = pathDialog.showAndWait();
+
+        pathResult.ifPresent(basePath -> {
+            try {
+                String normalizedPath = basePath.trim();
+                if (!normalizedPath.isEmpty() && !normalizedPath.endsWith("/")) {
+                    normalizedPath += "/";
+                }
+
+                for (File file : files) {
+                    String entryPath = normalizedPath + file.getName();
+                    byte[] fileBytes = java.nio.file.Files.readAllBytes(file.toPath());
+                    jarService.getJarEntries().put(entryPath, fileBytes);
+                    logger.info("Добавлен файл: " + entryPath);
+                }
+
+                showInfo("Успех", "Добавлено файлов: " + files.size() + "\nНе забудьте сохранить JAR.");
+                
+                // Перезагружаем дерево
+                loadJar(jarService.getCurrentJarFile());
+
+            } catch (Exception e) {
+                showError("Ошибка", "Не удалось добавить файлы: " + e.getMessage());
+                logger.error("Ошибка добавления файлов", e);
+            }
+        });
+    }
+
+    @FXML
+    private void onDeleteFile() {
+        if (jarService.getCurrentJarFile() == null) {
+            showError("Ошибка", "Сначала откройте JAR файл");
+            return;
+        }
+
+        TreeItem<JarEntryNode> selected = fileTree.getSelectionModel().getSelectedItem();
+        if (selected == null || selected.getValue() == null) {
+            showError("Ошибка", "Выберите файл для удаления");
+            return;
+        }
+
+        JarEntryNode node = selected.getValue();
+        if (node.isPackage() || node.getType() == JarEntryNode.Type.ROOT) {
+            showError("Ошибка", "Нельзя удалить пакет или корневой элемент");
+            return;
+        }
+
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+        confirm.setTitle("Подтверждение");
+        confirm.setHeaderText("Удалить файл?");
+        confirm.setContentText("Файл: " + node.getFullPath() + "\n\nЭто действие нельзя отменить!");
+
+        Optional<ButtonType> result = confirm.showAndWait();
+        if (result.isPresent() && result.get() == ButtonType.OK) {
+            jarService.getJarEntries().remove(node.getFullPath());
+            logger.info("Удалён файл: " + node.getFullPath());
+            
+            // Закрываем вкладку если она открыта
+            editorTabPane.getTabs().removeIf(tab -> 
+                node.getFullPath().equals(tab.getUserData())
+            );
+
+            showInfo("Успех", "Файл удалён. Не забудьте сохранить JAR.");
+            
+            // Перезагружаем дерево
+            loadJar(jarService.getCurrentJarFile());
+        }
+    }
+
+    // ==================== ЭКСПОРТ В ИСХОДНИКИ ====================
+
+    @FXML
+    private void onExportToSources() {
+        if (jarService.getCurrentJarFile() == null) {
+            showError("Ошибка", "Сначала откройте JAR файл");
+            return;
+        }
+
+        javafx.stage.DirectoryChooser chooser = new javafx.stage.DirectoryChooser();
+        chooser.setTitle("Выберите папку для экспорта");
+        Stage stage = (Stage) fileTree.getScene().getWindow();
+        File outputDir = chooser.showDialog(stage);
+
+        if (outputDir == null) return;
+
+        Alert progressAlert = new Alert(Alert.AlertType.INFORMATION);
+        progressAlert.setTitle("Экспорт в исходники");
+        progressAlert.setHeaderText("Экспорт классов...");
+
+        ProgressBar progressBar = new ProgressBar(0);
+        progressBar.setPrefWidth(400);
+        Label progressLabel = new Label("Подготовка...");
+
+        VBox vbox = new VBox(10, progressLabel, progressBar);
+        progressAlert.getDialogPane().setContent(vbox);
+        progressAlert.getDialogPane().getButtonTypes().clear();
+
+        progressAlert.show();
+
+        Task<Void> task = new Task<>() {
+            @Override
+            protected Void call() throws Exception {
+                exportService.exportToSources(
+                    jarService.getJarEntries(),
+                    outputDir,
+                    (current, total, file) -> {
+                        updateProgress(current, total);
+                        Platform.runLater(() -> {
+                            progressLabel.setText("Экспорт: " + current + " / " + total + "\n" + file);
+                        });
+                    }
+                );
+                return null;
+            }
+        };
+
+        progressBar.progressProperty().bind(task.progressProperty());
+
+        task.setOnSucceeded(e -> {
+            progressAlert.close();
+            showInfo("Успех", "Исходники экспортированы в:\n" + outputDir.getAbsolutePath());
+            logger.info("Экспорт завершён: " + outputDir.getAbsolutePath());
+        });
+
+        task.setOnFailed(e -> {
+            progressAlert.close();
+            showError("Ошибка", "Не удалось экспортировать: " + task.getException().getMessage());
+            logger.error("Ошибка экспорта", task.getException());
+        });
+
+        new Thread(task, "export-sources").start();
     }
 }

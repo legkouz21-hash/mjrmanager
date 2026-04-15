@@ -31,7 +31,6 @@ public class JarService {
         this.currentJarFile = jarFile;
         jarEntries.clear();
 
-
         JarEntryNode rootNode = new JarEntryNode(jarFile.getName(), "", JarEntryNode.Type.ROOT);
         TreeItem<JarEntryNode> root = new TreeItem<>(rootNode);
         root.setExpanded(true);
@@ -96,6 +95,7 @@ public class JarService {
                 }
             }
         }
+        
         for (InnerClassEntry inner : innerClasses) {
             String outerClassName = getOuterClassName(inner.className);
             String outerClassPath = inner.packagePath.isEmpty()
@@ -140,8 +140,13 @@ public class JarService {
         saveJar(currentJarFile);
     }
 
-    public File getCurrentJarFile() { return currentJarFile; }
-    public Map<String, byte[]> getJarEntries() { return jarEntries; }
+    public File getCurrentJarFile() { 
+        return currentJarFile; 
+    }
+    
+    public Map<String, byte[]> getJarEntries() { 
+        return jarEntries; 
+    }
 
     private TreeItem<JarEntryNode> getOrCreatePackageNode(
             String packagePath,

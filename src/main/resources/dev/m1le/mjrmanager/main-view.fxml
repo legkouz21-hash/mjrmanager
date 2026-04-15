@@ -20,15 +20,26 @@
                     <MenuItem text="Сохранить JAR" onAction="#onSaveJar" accelerator="Ctrl+S"/>
                     <MenuItem text="Сохранить как..." onAction="#onSaveAs" accelerator="Ctrl+Shift+S"/>
                     <SeparatorMenuItem/>
+                    <MenuItem text="Экспорт в исходники..." onAction="#onExportToSources" accelerator="Ctrl+E"/>
+                    <SeparatorMenuItem/>
                     <MenuItem text="Выход" onAction="#onExit"/>
                 </Menu>
                 <Menu text="Редактор">
                     <MenuItem text="Скомпилировать класс" onAction="#onCompileCurrentTab" accelerator="Ctrl+Shift+C"/>
                     <SeparatorMenuItem/>
+                    <MenuItem text="Глобальный поиск..." onAction="#onGlobalSearch" accelerator="Ctrl+Shift+F"/>
+                    <SeparatorMenuItem/>
                     <Menu text="Компилятор">
                         <RadioMenuItem fx:id="menuCompilerEclipse" text="Eclipse JDT (мягкий, с ошибками)" onAction="#onSelectCompilerEclipse" selected="true"/>
                         <RadioMenuItem fx:id="menuCompilerJavac" text="javac (строгий)" onAction="#onSelectCompilerJavac"/>
                     </Menu>
+                </Menu>
+                <Menu text="JAR">
+                    <MenuItem text="Просмотр манифеста" onAction="#onViewManifest"/>
+                    <MenuItem text="Редактировать манифест" onAction="#onEditManifest"/>
+                    <SeparatorMenuItem/>
+                    <MenuItem text="Добавить файлы..." onAction="#onAddFiles"/>
+                    <MenuItem text="Удалить выбранный файл" onAction="#onDeleteFile"/>
                 </Menu>
                 <Menu text="Справка">
                     <MenuItem text="О программе" onAction="#onAbout"/>
@@ -36,30 +47,46 @@
             </MenuBar>
 
             <ToolBar styleClass="main-toolbar">
-                <Button fx:id="btnOpenJar" onAction="#onOpenJar" styleClass="button-icon">
+                <!-- Файловые операции -->
+                <Button fx:id="btnOpenJar" onAction="#onOpenJar" styleClass="button-icon" text="Открыть">
                     <graphic><FontIcon iconLiteral="mdi2f-folder-open" iconSize="18"/></graphic>
                     <tooltip><Tooltip text="Открыть JAR (Ctrl+O)"/></tooltip>
                 </Button>
-                <Button fx:id="btnSaveJar" onAction="#onSaveJar" styleClass="button-icon">
+                <Button fx:id="btnSaveJar" onAction="#onSaveJar" styleClass="button-icon" text="Сохранить">
                     <graphic><FontIcon iconLiteral="mdi2c-content-save" iconSize="18"/></graphic>
                     <tooltip><Tooltip text="Сохранить JAR (Ctrl+S)"/></tooltip>
                 </Button>
-                <Button fx:id="btnSaveAs" onAction="#onSaveAs" styleClass="button-icon">
-                    <graphic><FontIcon iconLiteral="mdi2c-content-save-edit" iconSize="18"/></graphic>
-                    <tooltip><Tooltip text="Сохранить как..."/></tooltip>
-                </Button>
-                <Separator/>
-                <Button fx:id="btnCompile" onAction="#onCompileCurrentTab" styleClass="button-icon, button-compile">
+                
+                <Region prefWidth="20"/>
+                
+                <!-- Редактирование -->
+                <Button fx:id="btnCompile" onAction="#onCompileCurrentTab" styleClass="button-icon, button-compile" text="Компилировать">
                     <graphic><FontIcon iconLiteral="mdi2p-play-circle" iconSize="18"/></graphic>
-                    <tooltip><Tooltip text="Скомпилировать (Ctrl+Shift+C)"/></tooltip>
+                    <tooltip><Tooltip text="Скомпилировать класс (Ctrl+Shift+C)"/></tooltip>
                 </Button>
-                <Separator/>
-                <TextField fx:id="searchField" promptText="Поиск класса..." prefWidth="200"
+                
+                <Region prefWidth="20"/>
+                
+                <!-- Инструменты -->
+                <Button fx:id="btnGlobalSearch" onAction="#onGlobalSearch" styleClass="button-icon" text="Поиск">
+                    <graphic><FontIcon iconLiteral="mdi2f-file-search" iconSize="18"/></graphic>
+                    <tooltip><Tooltip text="Глобальный поиск по содержимому (Ctrl+Shift+F)"/></tooltip>
+                </Button>
+                <Button fx:id="btnManifest" onAction="#onViewManifest" styleClass="button-icon" text="Манифест">
+                    <graphic><FontIcon iconLiteral="mdi2f-file-document" iconSize="18"/></graphic>
+                    <tooltip><Tooltip text="Просмотр и редактирование манифеста"/></tooltip>
+                </Button>
+                
+                <Region HBox.hgrow="ALWAYS"/>
+                
+                <!-- Быстрый поиск -->
+                <TextField fx:id="searchField" promptText="Быстрый поиск класса..." prefWidth="200"
                            onAction="#onSearch"/>
                 <Button fx:id="btnSearch" onAction="#onSearch" styleClass="button-icon">
                     <graphic><FontIcon iconLiteral="mdi2m-magnify" iconSize="18"/></graphic>
                 </Button>
-                <Region HBox.hgrow="ALWAYS"/>
+                
+                <Region prefWidth="10"/>
                 <Label fx:id="jarNameLabel" styleClass="jar-name-label" text="Нет открытого файла"/>
             </ToolBar>
         </VBox>
