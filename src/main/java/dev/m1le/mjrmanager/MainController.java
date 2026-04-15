@@ -690,6 +690,16 @@ public class MainController implements Initializable {
     }
 
     private CodeArea findCodeAreaInTab(Tab tab) {
+        if (tab.getContent() instanceof HBox hbox) {
+            for (var node : hbox.getChildren()) {
+                if (node instanceof VBox vbox) {
+                    for (var child : vbox.getChildren()) {
+                        if (child instanceof CodeArea ca) return ca;
+                    }
+                }
+                if (node instanceof CodeArea ca) return ca;
+            }
+        }
         if (tab.getContent() instanceof VBox vbox) {
             for (var node : vbox.getChildren()) {
                 if (node instanceof CodeArea ca) return ca;
