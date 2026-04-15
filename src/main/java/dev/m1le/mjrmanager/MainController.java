@@ -524,10 +524,11 @@ public class MainController implements Initializable {
 
         MenuItem viewSourceItem = new MenuItem("Просмотр: Исходный код");
         viewSourceItem.setOnAction(e -> {
+            String sourceText = openedTab.getDecompiledSource();
             codeArea.clear();
-            codeArea.replaceText(0, 0, openedTab.getDecompiledSource());
-            if (JavaSyntaxHighlighter.canHighlight(openedTab.getDecompiledSource().length())) {
-                JavaSyntaxHighlighter.applyHighlighting(codeArea, openedTab.getDecompiledSource());
+            codeArea.replaceText(0, 0, sourceText);
+            if (JavaSyntaxHighlighter.canHighlight(sourceText.length())) {
+                JavaSyntaxHighlighter.applyHighlighting(codeArea, sourceText);
             }
         });
 
@@ -536,7 +537,7 @@ public class MainController implements Initializable {
             String bytecodeView = generateBytecodeView(openedTab.getEntry().getBytecode());
             codeArea.clear();
             codeArea.replaceText(0, 0, bytecodeView);
-
+            // Не применяем подсветку для байткода
         });
 
         tabContextMenu.getItems().addAll(viewSourceItem, viewBytecodeItem);
