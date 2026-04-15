@@ -68,7 +68,7 @@ public class JavaSyntaxHighlighter {
     }
 
     private static StyleSpans<Collection<String>> computeHighlighting(String text) {
-        // Если текст пустой, возвращаем пустой StyleSpans
+
         if (text == null || text.isEmpty()) {
             StyleSpansBuilder<Collection<String>> spansBuilder = new StyleSpansBuilder<>();
             spansBuilder.add(Collections.singleton("plain"), 0);
@@ -103,7 +103,6 @@ public class JavaSyntaxHighlighter {
             spansBuilder.add(Collections.singleton("plain"), remaining);
         }
 
-        // Если не было добавлено ни одного span, добавляем весь текст как plain
         if (lastKwEnd == 0 && text.length() > 0) {
             spansBuilder.add(Collections.singleton("plain"), text.length());
         }

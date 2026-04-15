@@ -40,6 +40,14 @@
                     <SeparatorMenuItem/>
                     <MenuItem text="Добавить файлы..." onAction="#onAddFiles"/>
                     <MenuItem text="Удалить выбранный файл" onAction="#onDeleteFile"/>
+                    <SeparatorMenuItem/>
+                    <MenuItem text="Запустить JAR" onAction="#onRunJar"/>
+                    <SeparatorMenuItem/>
+                    <MenuItem text="Зависимости класса" onAction="#onShowDependencies"/>
+                </Menu>
+                <Menu text="Декомпилятор">
+                    <RadioMenuItem fx:id="menuDecompilerCfr" text="CFR (по умолчанию)" onAction="#onSelectDecompilerCfr" selected="true"/>
+                    <RadioMenuItem fx:id="menuDecompilerProcyon" text="Procyon (альтернативный)" onAction="#onSelectDecompilerProcyon"/>
                 </Menu>
                 <Menu text="Справка">
                     <MenuItem text="О программе" onAction="#onAbout"/>
@@ -63,6 +71,10 @@
                 <Button fx:id="btnCompile" onAction="#onCompileCurrentTab" styleClass="button-icon, button-compile" text="Компилировать">
                     <graphic><FontIcon iconLiteral="mdi2p-play-circle" iconSize="18"/></graphic>
                     <tooltip><Tooltip text="Скомпилировать класс (Ctrl+Shift+C)"/></tooltip>
+                </Button>
+                <Button fx:id="btnRunJar" onAction="#onRunJar" styleClass="button-icon, button-run" text="Запустить">
+                    <graphic><FontIcon iconLiteral="mdi2p-play" iconSize="18"/></graphic>
+                    <tooltip><Tooltip text="Запустить JAR (нужен Main-Class в манифесте)"/></tooltip>
                 </Button>
                 
                 <Region prefWidth="20"/>

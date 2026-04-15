@@ -20,6 +20,7 @@ module dev.m1le.mjrmanager {
     requires java.compiler;
     requires java.prefs;
     requires org.eclipse.jdt.core.compiler.batch;
+    requires procyon.compilertools;
 
     opens dev.m1le.mjrmanager to javafx.fxml;
     opens dev.m1le.mjrmanager.model to javafx.fxml;

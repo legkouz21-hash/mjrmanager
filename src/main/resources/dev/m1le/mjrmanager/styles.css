@@ -47,6 +47,15 @@
     -fx-text-fill: #b5e890;
 }
 
+.button-run .ikonli-font-icon { -fx-icon-color: #61afef; }
+.button-run:hover .ikonli-font-icon { -fx-icon-color: #88c8ff; }
+.button-run {
+    -fx-text-fill: #61afef;
+}
+.button-run:hover {
+    -fx-text-fill: #88c8ff;
+}
+
 .button-accent {
     -fx-background-color: #528bff;
     -fx-text-fill: #e8eaf0;

@@ -9,6 +9,7 @@ import javafx.application.Platform;
 import javafx.concurrent.Task;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
+import javafx.scene.canvas.Canvas;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.stage.FileChooser;
@@ -32,6 +33,7 @@ public class MainController implements Initializable {
     @FXML private VBox welcomePane;
     @FXML private Button btnSaveJar;
     @FXML private Button btnCompile;
+    @FXML private Button btnRunJar;
     @FXML private Button btnGlobalSearch;
     @FXML private Button btnManifest;
     @FXML private TextField searchField;
@@ -41,15 +43,21 @@ public class MainController implements Initializable {
     @FXML private HBox statusBar;
     @FXML private RadioMenuItem menuCompilerEclipse;
     @FXML private RadioMenuItem menuCompilerJavac;
+    @FXML private RadioMenuItem menuDecompilerCfr;
+    @FXML private RadioMenuItem menuDecompilerProcyon;
 
-    private final JarService        jarService        = new JarService();
-    private final DecompilerService decompilerService = new DecompilerService();
-    private final CompilerService   compilerService   = new CompilerService();
-    private final SettingsService   settingsService   = new SettingsService();
-    private final DebugLogger       logger            = DebugLogger.getInstance();
-    private final SearchService     searchService     = new SearchService(decompilerService);
-    private final ManifestService   manifestService   = new ManifestService();
-    private final ExportService     exportService     = new ExportService(decompilerService);
+    private final JarService              jarService        = new JarService();
+    private final DecompilerService       decompilerService = new DecompilerService();
+    private final ProcyonDecompilerService procyonService   = new ProcyonDecompilerService();
+    private final CompilerService         compilerService   = new CompilerService();
+    private final SettingsService         settingsService   = new SettingsService();
+    private final DebugLogger             logger            = DebugLogger.getInstance();
+    private final SearchService           searchService     = new SearchService(decompilerService);
+    private final ManifestService         manifestService   = new ManifestService();
+    private final ExportService           exportService     = new ExportService(decompilerService);
+    private final DependencyService       dependencyService = new DependencyService();
+
+    private boolean useProcyon = false;
 
     private final Map<String, OpenedTab> openedTabs = new HashMap<>();
 
@@ -465,10 +473,14 @@ public class MainController implements Initializable {
             protected String call() {
                 long start = System.currentTimeMillis();
                 try {
-                    String result = decompilerService.decompile(
-                            node.getFullPath(), node.getBytecode(), jarService.getJarEntries());
+                    String result;
+                    if (useProcyon) {
+                        result = procyonService.decompile(node.getFullPath(), node.getBytecode(), jarService.getJarEntries());
+                    } else {
+                        result = decompilerService.decompile(node.getFullPath(), node.getBytecode(), jarService.getJarEntries());
+                    }
                     long elapsed = System.currentTimeMillis() - start;
-                    logger.success("Декомпиляция успешна: " + node.getFullPath() + " (" + elapsed + " мс, " + result.length() + " символов)");
+                    logger.success("Декомпиляция успешна: " + node.getFullPath() + " (" + elapsed + " мс)");
                     return result;
                 } catch (Exception e) {
                     logger.warn("Основной декомпилятор не сработал, пробуем запасной метод");
@@ -537,7 +549,6 @@ public class MainController implements Initializable {
             String bytecodeView = generateBytecodeView(openedTab.getEntry().getBytecode());
             codeArea.clear();
             codeArea.replaceText(0, 0, bytecodeView);
-            // Не применяем подсветку для байткода
         });
 
         tabContextMenu.getItems().addAll(viewSourceItem, viewBytecodeItem);
@@ -588,8 +599,94 @@ public class MainController implements Initializable {
 
         VBox container = new VBox(codeArea);
         VBox.setVgrow(codeArea, Priority.ALWAYS);
-        tab.setContent(container);
+
+        Canvas minimap = buildMinimap(codeArea);
+        HBox editorWithMinimap = new HBox(container, minimap);
+        HBox.setHgrow(container, Priority.ALWAYS);
+
+        tab.setContent(editorWithMinimap);
         return tab;
+    }
+
+    private Canvas buildMinimap(CodeArea codeArea) {
+        javafx.scene.canvas.Canvas canvas = new javafx.scene.canvas.Canvas(80, 0);
+        canvas.setStyle("-fx-background-color: #1d2026;");
+
+        javafx.scene.canvas.GraphicsContext gc = canvas.getGraphicsContext2D();
+
+        Runnable redraw = () -> {
+            double height = codeArea.getHeight();
+            if (height <= 0) return;
+            canvas.setHeight(height);
+            gc.setFill(javafx.scene.paint.Color.web("#1d2026"));
+            gc.fillRect(0, 0, 80, height);
+
+            String[] lines = codeArea.getText().split("\n", -1);
+            int totalLines = lines.length;
+            if (totalLines == 0) return;
+
+            double lineHeight = Math.max(1.0, height / totalLines);
+            double fontSize = Math.min(lineHeight, 2.5);
+
+            for (int i = 0; i < totalLines; i++) {
+                String line = lines[i].trim();
+                if (line.isEmpty()) continue;
+
+                double y = i * lineHeight;
+                double indent = 0;
+                for (int c = 0; c < lines[i].length() && lines[i].charAt(c) == ' '; c++) indent++;
+                double x = 2 + (indent * 0.3);
+
+                if (line.startsWith("//") || line.startsWith("*")) {
+                    gc.setFill(javafx.scene.paint.Color.web("#4b5263"));
+                } else if (line.startsWith("public") || line.startsWith("private") || line.startsWith("protected")
+                        || line.startsWith("class") || line.startsWith("interface") || line.startsWith("enum")) {
+                    gc.setFill(javafx.scene.paint.Color.web("#cc7832"));
+                } else if (line.startsWith("import") || line.startsWith("package")) {
+                    gc.setFill(javafx.scene.paint.Color.web("#61afef"));
+                } else if (line.startsWith("@")) {
+                    gc.setFill(javafx.scene.paint.Color.web("#bbb529"));
+                } else {
+                    gc.setFill(javafx.scene.paint.Color.web("#636d83"));
+                }
+
+                double lineWidth = Math.min(76 - x, line.length() * fontSize * 0.6);
+                gc.fillRect(x, y, lineWidth, Math.max(lineHeight * 0.7, 0.5));
+            }
+
+            double visibleTop = codeArea.getEstimatedScrollY();
+            double totalHeight = codeArea.getTotalHeightEstimate();
+            if (totalHeight > 0) {
+                double viewRatio = height / totalHeight;
+                double scrollRatio = visibleTop / totalHeight;
+                double vpH = height * viewRatio;
+                double vpY = scrollRatio * height;
+                gc.setFill(javafx.scene.paint.Color.web("#528bff", 0.15));
+                gc.fillRect(0, vpY, 80, vpH);
+                gc.setStroke(javafx.scene.paint.Color.web("#528bff", 0.4));
+                gc.setLineWidth(1);
+                gc.strokeRect(0, vpY, 79, vpH);
+            }
+        };
+
+        codeArea.textProperty().addListener((obs, o, n) -> Platform.runLater(redraw));
+        codeArea.heightProperty().addListener((obs, o, n) -> Platform.runLater(redraw));
+        codeArea.estimatedScrollYProperty().addListener((obs, o, n) -> Platform.runLater(redraw));
+
+        canvas.setOnMouseClicked(event -> {
+            double ratio = event.getY() / canvas.getHeight();
+            double total = codeArea.getTotalHeightEstimate();
+            codeArea.scrollYBy(ratio * total - codeArea.getEstimatedScrollY());
+        });
+
+        canvas.setOnMouseDragged(event -> {
+            double ratio = Math.max(0, Math.min(1, event.getY() / canvas.getHeight()));
+            double total = codeArea.getTotalHeightEstimate();
+            codeArea.scrollYBy(ratio * total - codeArea.getEstimatedScrollY());
+        });
+
+        Platform.runLater(redraw);
+        return canvas;
     }
 
     private CodeArea findCodeAreaInTab(Tab tab) {
@@ -633,6 +730,7 @@ public class MainController implements Initializable {
     private void updateButtonStates(boolean jarLoaded) {
         btnSaveJar.setDisable(!jarLoaded);
         btnCompile.setDisable(!jarLoaded);
+        btnRunJar.setDisable(!jarLoaded);
         btnGlobalSearch.setDisable(!jarLoaded);
         btnManifest.setDisable(!jarLoaded);
     }
@@ -735,6 +833,188 @@ public class MainController implements Initializable {
     }
 
     @FXML
+    private void onSelectDecompilerCfr() {
+        useProcyon = false;
+        menuDecompilerCfr.setSelected(true);
+        menuDecompilerProcyon.setSelected(false);
+        setStatus("Декомпилятор: CFR", false);
+        logger.info("Выбран декомпилятор: CFR");
+    }
+
+    @FXML
+    private void onSelectDecompilerProcyon() {
+        useProcyon = true;
+        menuDecompilerCfr.setSelected(false);
+        menuDecompilerProcyon.setSelected(true);
+        setStatus("Декомпилятор: Procyon", false);
+        logger.info("Выбран декомпилятор: Procyon");
+    }
+
+    @FXML
+    private void onRunJar() {
+        if (jarService.getCurrentJarFile() == null) {
+            showError("Ошибка", "Сначала откройте JAR файл");
+            return;
+        }
+
+        String mainClass = manifestService.getMainClass(jarService.getJarEntries());
+        if (mainClass == null || mainClass.isBlank()) {
+            showError("Нет Main-Class", "В манифесте не указан Main-Class.\nОтредактируйте манифест и добавьте:\nMain-Class: com.example.Main");
+            return;
+        }
+
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+        confirm.setTitle("Запуск JAR");
+        confirm.setHeaderText("Запустить JAR?");
+        confirm.setContentText("Main-Class: " + mainClass + "\nФайл: " + jarService.getCurrentJarFile().getName());
+
+        Optional<ButtonType> result = confirm.showAndWait();
+        if (result.isEmpty() || result.get() != ButtonType.OK) return;
+
+        File jarFile = jarService.getCurrentJarFile();
+        String taskName = "Запуск: " + jarFile.getName();
+        addTask(taskName, "Запуск...");
+        setStatus("Запуск JAR: " + jarFile.getName(), true);
+
+        Task<Void> task = new Task<>() {
+            @Override
+            protected Void call() throws Exception {
+                ProcessBuilder pb = new ProcessBuilder(
+                    "java", "-jar", jarFile.getAbsolutePath()
+                );
+                pb.redirectErrorStream(true);
+                pb.directory(jarFile.getParentFile());
+                Process process = pb.start();
+
+                StringBuilder output = new StringBuilder();
+                try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(process.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        output.append(line).append("\n");
+                        logger.info("[JAR] " + line);
+                    }
+                }
+
+                int exitCode = process.waitFor();
+                logger.info("JAR завершён с кодом: " + exitCode);
+                return null;
+            }
+        };
+
+        task.setOnSucceeded(e -> {
+            setStatus("JAR завершён: " + jarFile.getName(), false);
+            removeTask(taskName);
+        });
+
+        task.setOnFailed(e -> {
+            setStatus("Ошибка запуска JAR", false);
+            logger.error("Ошибка запуска JAR", task.getException());
+            showError("Ошибка запуска", task.getException().getMessage());
+            removeTask(taskName);
+        });
+
+        new Thread(task, "jar-runner").start();
+    }
+
+    @FXML
+    private void onShowDependencies() {
+        if (jarService.getCurrentJarFile() == null) {
+            showError("Ошибка", "Сначала откройте JAR файл");
+            return;
+        }
+
+        TreeItem<JarEntryNode> selected = fileTree.getSelectionModel().getSelectedItem();
+        if (selected == null || selected.getValue() == null || !selected.getValue().isClass()) {
+            showError("Ошибка", "Выберите класс в дереве");
+            return;
+        }
+
+        String classPath = selected.getValue().getFullPath();
+        String taskName = "Анализ зависимостей: " + selected.getValue().getName();
+        addTask(taskName, "Анализ...");
+        setStatus("Анализ зависимостей...", true);
+
+        Task<DependencyService.DependencyResult> task = new Task<>() {
+            @Override
+            protected DependencyService.DependencyResult call() {
+                return dependencyService.analyze(classPath, jarService.getJarEntries());
+            }
+        };
+
+        task.setOnSucceeded(e -> {
+            DependencyService.DependencyResult result = task.getValue();
+            setStatus("Зависимости: " + selected.getValue().getName(), false);
+            removeTask(taskName);
+            showDependenciesDialog(result);
+        });
+
+        task.setOnFailed(e -> {
+            setStatus("Ошибка анализа", false);
+            logger.error("Ошибка анализа зависимостей", task.getException());
+            showError("Ошибка", task.getException().getMessage());
+            removeTask(taskName);
+        });
+
+        new Thread(task, "dep-analyzer").start();
+    }
+
+    private void showDependenciesDialog(DependencyService.DependencyResult result) {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Зависимости класса");
+        dialog.setHeaderText(result.targetClass.replace(".class", "").replace('/', '.'));
+
+        TabPane tabs = new TabPane();
+        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+
+        Tab usedByTab = new Tab("Используется в (" + result.usedBy.size() + ")");
+        ListView<String> usedByList = new ListView<>();
+        usedByList.getItems().addAll(result.usedBy);
+        usedByList.setPrefSize(600, 350);
+        usedByList.setOnMouseClicked(event -> {
+            if (event.getClickCount() == 2) {
+                String cls = usedByList.getSelectionModel().getSelectedItem();
+                if (cls != null) {
+                    dialog.close();
+                    openClassByName(cls);
+                }
+            }
+        });
+        usedByTab.setContent(usedByList);
+
+        Tab usesTab = new Tab("Использует (" + result.uses.size() + ")");
+        ListView<String> usesList = new ListView<>();
+        usesList.getItems().addAll(result.uses);
+        usesList.setPrefSize(600, 350);
+        usesList.setOnMouseClicked(event -> {
+            if (event.getClickCount() == 2) {
+                String cls = usesList.getSelectionModel().getSelectedItem();
+                if (cls != null) {
+                    dialog.close();
+                    openClassByName(cls);
+                }
+            }
+        });
+        usesTab.setContent(usesList);
+
+        tabs.getTabs().addAll(usedByTab, usesTab);
+        dialog.getDialogPane().setContent(tabs);
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.showAndWait();
+    }
+
+    private void openClassByName(String dotName) {
+        String entryPath = dotName.replace('.', '/') + ".class";
+        TreeItem<JarEntryNode> found = findTreeItem(fileTree.getRoot(), entryPath);
+        if (found != null && found.getValue() != null) {
+            fileTree.getSelectionModel().select(found);
+            openClassInEditor(found.getValue());
+        } else {
+            showError("Класс не найден", dotName + "\nКласс может быть из внешней библиотеки.");
+        }
+    }
+
+    @FXML
     private void onAbout() {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.setTitle("О программе");
@@ -758,7 +1038,6 @@ public class MainController implements Initializable {
         alert.showAndWait();
     }
 
-    // ==================== ГЛОБАЛЬНЫЙ ПОИСК ====================
 
     @FXML
     private void onGlobalSearch() {
@@ -898,7 +1177,6 @@ public class MainController implements Initializable {
         return null;
     }
 
-    // ==================== МАНИФЕСТ ====================
 
     @FXML
     private void onViewManifest() {
@@ -973,7 +1251,6 @@ public class MainController implements Initializable {
         });
     }
 
-    // ==================== ДОБАВЛЕНИЕ/УДАЛЕНИЕ ФАЙЛОВ ====================
 
     @FXML
     private void onAddFiles() {
@@ -1011,8 +1288,7 @@ public class MainController implements Initializable {
                 }
 
                 showInfo("Успех", "Добавлено файлов: " + files.size() + "\nНе забудьте сохранить JAR.");
-                
-                // Перезагружаем дерево
+
                 loadJar(jarService.getCurrentJarFile());
 
             } catch (Exception e) {
@@ -1050,20 +1326,17 @@ public class MainController implements Initializable {
         if (result.isPresent() && result.get() == ButtonType.OK) {
             jarService.getJarEntries().remove(node.getFullPath());
             logger.info("Удалён файл: " + node.getFullPath());
-            
-            // Закрываем вкладку если она открыта
+
             editorTabPane.getTabs().removeIf(tab -> 
                 node.getFullPath().equals(tab.getUserData())
             );
 
             showInfo("Успех", "Файл удалён. Не забудьте сохранить JAR.");
-            
-            // Перезагружаем дерево
+
             loadJar(jarService.getCurrentJarFile());
         }
     }
 
-    // ==================== ЭКСПОРТ В ИСХОДНИКИ ====================
 
     @FXML
     private void onExportToSources() {
