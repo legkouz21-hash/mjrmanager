@@ -1,0 +1,346 @@
+/* ============================================================
+   MJRManager - Базовые стили (цвета переопределяются темой)
+   ============================================================ */
+
+/* ---- Шрифты ---- */
+@font-face {
+    font-family: 'JetBrains Mono';
+    src: url('fonts/JetBrainsMono-Regular.ttf');
+}
+
+/* ---- Основные структурные стили ---- */
+.main-container { -fx-background-color: #282c34; }
+
+.main-toolbar {
+    -fx-background-color: #21252b;
+    -fx-border-color: #181a1f;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 4 8 4 8;
+    -fx-spacing: 4;
+}
+
+.button-icon {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-cursor: hand;
+    -fx-padding: 5 8 5 8;
+    -fx-background-radius: 5;
+}
+.button-icon:hover { -fx-background-color: #2c313a; }
+.button-icon:pressed { -fx-background-color: #3a3f4b; }
+.button-icon .ikonli-font-icon { -fx-icon-color: #abb2bf; }
+.button-icon:hover .ikonli-font-icon { -fx-icon-color: #e5c07b; }
+
+.button-compile .ikonli-font-icon { -fx-icon-color: #98c379; }
+.button-compile:hover .ikonli-font-icon { -fx-icon-color: #b5e890; }
+
+.button-accent {
+    -fx-background-color: #528bff;
+    -fx-text-fill: #e8eaf0;
+    -fx-font-size: 14px;
+    -fx-padding: 10 24 10 24;
+    -fx-background-radius: 6;
+    -fx-cursor: hand;
+    -fx-font-weight: bold;
+}
+.button-accent:hover { -fx-background-color: #6a9fff; }
+
+.jar-name-label {
+    -fx-text-fill: #636d83;
+    -fx-font-size: 12px;
+    -fx-padding: 0 8 0 0;
+}
+
+/* ---- Sidebar ---- */
+.sidebar {
+    -fx-background-color: #21252b;
+    -fx-border-color: #181a1f;
+    -fx-border-width: 0 1 0 0;
+}
+.sidebar-header {
+    -fx-text-fill: #636d83;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 8 12 6 12;
+    -fx-background-color: #21252b;
+    -fx-border-color: #181a1f;
+    -fx-border-width: 0 0 1 0;
+}
+
+/* ---- Дерево файлов ---- */
+.file-tree { -fx-background-color: #21252b; }
+
+.file-tree .tree-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #abb2bf;
+    -fx-font-size: 13px;
+    -fx-padding: 3 6 3 6;
+}
+.file-tree .tree-cell:hover {
+    -fx-background-color: #2c313a;
+    -fx-text-fill: #cdd3de;
+}
+.file-tree .tree-cell:selected {
+    -fx-background-color: #2c313a;
+    -fx-text-fill: #cdd3de;
+    -fx-border-color: #528bff;
+    -fx-border-width: 0 0 0 2;
+}
+.file-tree .tree-cell:selected:focused {
+    -fx-background-color: #2c313a;
+    -fx-text-fill: #cdd3de;
+}
+
+/* Иконки */
+.icon-jar        { -fx-icon-color: #e5c07b; }
+.icon-package    { -fx-icon-color: #61afef; }
+.icon-class      { -fx-icon-color: #98c379; }
+.icon-resource   { -fx-icon-color: #c678dd; }
+
+/* ---- Приветственный экран ---- */
+.welcome-pane { -fx-background-color: #282c34; }
+.welcome-icon { -fx-icon-color: #3a3f4b; }
+.welcome-title {
+    -fx-text-fill: #abb2bf;
+    -fx-font-size: 30px;
+    -fx-font-weight: bold;
+}
+.welcome-subtitle {
+    -fx-text-fill: #636d83;
+    -fx-font-size: 15px;
+}
+
+/* ---- Вкладки ---- */
+.editor-tabs { -fx-background-color: #282c34; }
+.editor-tabs .tab-header-area {
+    -fx-background-color: #21252b;
+    -fx-border-color: #181a1f;
+    -fx-border-width: 0 0 1 0;
+}
+.editor-tabs .tab-header-background { -fx-background-color: #21252b; }
+.editor-tabs .tab { -fx-background-color: #21252b; -fx-padding: 4 14 4 14; }
+.editor-tabs .tab .tab-label { -fx-text-fill: #636d83; -fx-font-size: 13px; }
+.editor-tabs .tab:selected { -fx-background-color: #282c34; }
+.editor-tabs .tab:selected .tab-label { -fx-text-fill: #abb2bf; }
+.editor-tabs .tab:hover .tab-label { -fx-text-fill: #abb2bf; }
+
+/* ---- CodeArea ---- */
+.code-area {
+    -fx-background-color: #282c34;
+    -fx-font-family: "JetBrains Mono", "Consolas", monospace;
+    -fx-font-size: 14px;
+}
+.code-area .content { 
+    -fx-background-color: #282c34; 
+}
+.code-area .paragraph-box:has(.caret) { 
+    -fx-background-color: #2c313a; 
+}
+
+.code-area .lineno {
+    -fx-background-color: #21252b;
+    -fx-text-fill: #4b5263;
+    -fx-font-size: 13px;
+    -fx-padding: 0 10 0 10;
+    -fx-border-color: #181a1f;
+    -fx-border-width: 0 1 0 0;
+    -fx-alignment: center-right;
+}
+
+/* ---- Подсветка синтаксиса (IntelliJ Darcula) ---- */
+.keyword    { -fx-fill: #cc7832; }
+.string     { -fx-fill: #6a8759; }
+.comment    { -fx-fill: #808080; -fx-font-style: italic; }
+.number     { -fx-fill: #6897bb; }
+.annotation { -fx-fill: #bbb529; }
+.classname  { -fx-fill: #a9b7c6; }
+.paren      { -fx-fill: #a9b7c6; }
+.brace      { -fx-fill: #a9b7c6; }
+.semicolon  { -fx-fill: #cc7832; }
+.plain      { -fx-fill: #a9b7c6; }
+
+/* ---- Статус бар ---- */
+.status-bar {
+    -fx-background-color: #21252b;
+    -fx-border-color: #181a1f;
+    -fx-border-width: 1 0 0 0;
+    -fx-min-height: 26px;
+}
+.status-label { -fx-text-fill: #636d83; -fx-font-size: 12px; }
+.status-progress { -fx-accent: #528bff; }
+
+/* ---- SplitPane ---- */
+.main-split { -fx-background-color: #282c34; -fx-padding: 0; }
+.main-split > .split-pane-divider {
+    -fx-background-color: #181a1f;
+    -fx-padding: 0 1 0 1;
+}
+
+/* ---- MenuBar ---- */
+.menu-bar {
+    -fx-background-color: #21252b;
+    -fx-border-color: #181a1f;
+    -fx-border-width: 0 0 1 0;
+}
+.menu-bar .menu .label { -fx-text-fill: #abb2bf; -fx-font-size: 13px; }
+.menu-bar .menu:hover { -fx-background-color: #2c313a; }
+.menu-bar .menu:showing { -fx-background-color: #2c313a; }
+
+.context-menu {
+    -fx-background-color: #21252b;
+    -fx-border-color: #181a1f;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.5), 8, 0, 0, 2);
+}
+.menu-item .label { -fx-text-fill: #abb2bf; -fx-font-size: 13px; }
+.menu-item:hover { -fx-background-color: #2c313a; }
+.menu-item:hover .label { -fx-text-fill: #cdd3de; }
+.menu-item:disabled .label { -fx-text-fill: #4b5263; }
+
+/* ---- ScrollBar ---- */
+.scroll-bar { -fx-background-color: #21252b; }
+.scroll-bar .thumb { -fx-background-color: #3a3f4b; -fx-background-radius: 3; }
+.scroll-bar .thumb:hover { -fx-background-color: #4b5263; }
+.scroll-bar .increment-button,
+.scroll-bar .decrement-button { -fx-background-color: transparent; -fx-padding: 2; }
+.scroll-bar .increment-arrow,
+.scroll-bar .decrement-arrow { -fx-background-color: #636d83; }
+
+/* ---- TextField ---- */
+.text-field {
+    -fx-background-color: #1d2026;
+    -fx-text-fill: #abb2bf;
+    -fx-border-color: #3a3f4b;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-prompt-text-fill: #4b5263;
+    -fx-padding: 4 8 4 8;
+    -fx-font-size: 13px;
+}
+.text-field:focused { -fx-border-color: #528bff; }
+
+/* ---- Tooltip ---- */
+.tooltip {
+    -fx-background-color: #1d2026;
+    -fx-text-fill: #abb2bf;
+    -fx-border-color: #3a3f4b;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-font-size: 12px;
+}
+
+/* ---- Консоль отладки ---- */
+.console-pane {
+    -fx-background-color: #1d2026;
+    -fx-border-color: #181a1f;
+    -fx-border-width: 1 0 0 0;
+}
+
+.console-header {
+    -fx-background-color: #21252b;
+    -fx-border-color: #181a1f;
+    -fx-border-width: 0 0 1 0;
+}
+
+.console-title {
+    -fx-text-fill: #abb2bf;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+
+.console-button {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-cursor: hand;
+    -fx-padding: 3 6 3 6;
+    -fx-background-radius: 4;
+}
+
+.console-button:hover {
+    -fx-background-color: #2c313a;
+}
+
+.console-button .ikonli-font-icon {
+    -fx-icon-color: #abb2bf;
+    -fx-icon-size: 14;
+}
+
+.console-checkbox {
+    -fx-text-fill: #abb2bf;
+    -fx-font-size: 11px;
+}
+
+.console-text {
+    -fx-background-color: #1d2026;
+    -fx-text-fill: #abb2bf;
+    -fx-font-family: "Consolas", "Courier New", monospace;
+    -fx-font-size: 11px;
+    -fx-control-inner-background: #1d2026;
+    -fx-highlight-fill: #3a3f4b;
+    -fx-highlight-text-fill: #e8eaf0;
+}
+
+.console-text .content {
+    -fx-background-color: #1d2026;
+}
+
+.console-text .scroll-pane {
+    -fx-background-color: #1d2026;
+}
+
+.console-toggle-button {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-cursor: hand;
+    -fx-padding: 3 6 3 6;
+    -fx-background-radius: 4;
+}
+
+.console-toggle-button:hover {
+    -fx-background-color: #2c313a;
+}
+
+.console-toggle-button .ikonli-font-icon {
+    -fx-icon-color: #636d83;
+}
+
+.console-toggle-button:hover .ikonli-font-icon {
+    -fx-icon-color: #abb2bf;
+}
+
+/* ---- Диалог тем ---- */
+.theme-dialog .dialog-pane {
+    -fx-background-color: #21252b;
+}
+.theme-dialog .dialog-pane .label {
+    -fx-text-fill: #abb2bf;
+}
+.theme-dialog .dialog-pane .button {
+    -fx-background-color: #2c313a;
+    -fx-text-fill: #abb2bf;
+    -fx-border-color: #3a3f4b;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+    -fx-cursor: hand;
+}
+.theme-dialog .dialog-pane .button:hover {
+    -fx-background-color: #3a3f4b;
+    -fx-text-fill: #cdd3de;
+}
+.theme-dialog .dialog-pane .combo-box {
+    -fx-background-color: #1d2026;
+    -fx-border-color: #3a3f4b;
+    -fx-border-radius: 4;
+}
+.theme-dialog .dialog-pane .combo-box .list-cell {
+    -fx-text-fill: #abb2bf;
+    -fx-background-color: transparent;
+}
+.theme-dialog .dialog-pane .scroll-pane {
+    -fx-background-color: #21252b;
+    -fx-border-color: transparent;
+}
+.theme-dialog .dialog-pane .scroll-pane .viewport {
+    -fx-background-color: #21252b;
+}
