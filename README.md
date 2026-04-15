@@ -5,7 +5,7 @@ preview:
 
 **MJRManager** — мощный инструмент для работы с JAR-архивами: декомпиляция, редактирование и перекомпиляция Java-классов с современным графическим интерфейсом.
 
-![Java](https://img.shields.io/badge/Java-17-orange)
+![Java](https://img.shields.io/badge/Java-21-orange)
 ![JavaFX](https://img.shields.io/badge/JavaFX-21.0.6-blue)
 
 ## 🚀 Возможности
