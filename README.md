@@ -7,7 +7,6 @@ preview:
 
 ![Java](https://img.shields.io/badge/Java-17-orange)
 ![JavaFX](https://img.shields.io/badge/JavaFX-21.0.6-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
 
 ## 🚀 Возможности
 
