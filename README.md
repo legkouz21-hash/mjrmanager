@@ -57,9 +57,8 @@ cd mjrmanager
 
 ## 👨‍💻 Автор
 
-**M1le**
+**M1le** &&
 **Kiro ai**
 
-- GitHub: [@legkouz21-hash](https://github.com/legkouz21-hash)
 
 ⭐ Если проект оказался полезным, поставьте звезду!
