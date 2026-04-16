@@ -158,28 +158,54 @@ public class DecompilerService {
         return sb.toString();
     }
 
-    private String decodeUnicodeEscapes(String source) {
+    public static String decodeUnicodeEscapes(String source) {
+        if (source == null || !source.contains("\\u")) return source;
+
         StringBuilder sb = new StringBuilder(source.length());
         int i = 0;
         while (i < source.length()) {
-            if (i + 5 < source.length()
-                    && source.charAt(i) == '\\'
-                    && source.charAt(i + 1) == 'u') {
+            char c = source.charAt(i);
 
-                String hex = source.substring(i + 2, i + 6);
-                if (hex.chars().allMatch(c -> "0123456789abcdefABCDEF".indexOf(c) >= 0)) {
-                    int codePoint = Integer.parseInt(hex, 16);
+            if (c == '\\' && i + 1 < source.length()) {
+                char next = source.charAt(i + 1);
 
-                    if (codePoint >= 0x20) {
-                        sb.append((char) codePoint);
-                        i += 6;
-                        continue;
+                if (next == 'u' && i + 5 < source.length()) {
+                    String hex = source.substring(i + 2, i + 6);
+                    if (isHex(hex)) {
+                        int codePoint = Integer.parseInt(hex, 16);
+                        if (codePoint >= 0x20) {
+                            sb.append((char) codePoint);
+                            i += 6;
+                            continue;
+                        }
+                    }
+                }
+
+                if (next == '\\' && i + 2 < source.length()
+                        && source.charAt(i + 2) == 'u' && i + 6 < source.length()) {
+                    String hex = source.substring(i + 3, i + 7);
+                    if (isHex(hex)) {
+                        int codePoint = Integer.parseInt(hex, 16);
+                        if (codePoint >= 0x20) {
+                            sb.append((char) codePoint);
+                            i += 7;
+                            continue;
+                        }
                     }
                 }
             }
-            sb.append(source.charAt(i));
+
+            sb.append(c);
             i++;
         }
         return sb.toString();
+    }
+
+    private static boolean isHex(String s) {
+        if (s == null || s.length() != 4) return false;
+        for (char c : s.toCharArray()) {
+            if ("0123456789abcdefABCDEF".indexOf(c) < 0) return false;
+        }
+        return true;
     }
 }

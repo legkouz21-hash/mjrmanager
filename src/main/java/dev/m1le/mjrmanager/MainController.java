@@ -517,7 +517,7 @@ public class MainController implements Initializable {
         };
 
         task.setOnSucceeded(e -> {
-            String source = task.getValue();
+            String source = DecompilerService.decodeUnicodeEscapes(task.getValue());
             OpenedTab openedTab = new OpenedTab(node, source);
             openedTabs.put(tabId, openedTab);
             Tab tab = createEditorTab(openedTab, tabId);
