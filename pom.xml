@@ -16,6 +16,13 @@
         <javafx.version>21.0.6</javafx.version>
     </properties>
 
+    <repositories>
+        <repository>
+            <id>fabricmc</id>
+            <url>https://maven.fabricmc.net/</url>
+        </repository>
+    </repositories>
+
     <dependencies>
         <!-- JavaFX -->
         <dependency>
@@ -102,6 +109,13 @@
             <artifactId>org.eclipse.jdt.core</artifactId>
             <version>3.38.0</version>
         </dependency>
+
+        <!-- Fabric TinyRemapper - снятие маппингов -->
+        <dependency>
+            <groupId>net.fabricmc</groupId>
+            <artifactId>tiny-remapper</artifactId>
+            <version>0.10.4</version>
+        </dependency>
     </dependencies>
 
     <build>
@@ -113,6 +127,10 @@
                 <configuration>
                     <source>17</source>
                     <target>17</target>
+                    <compilerArgs>
+                        <arg>--add-reads</arg>
+                        <arg>dev.m1le.mjrmanager=ALL-UNNAMED</arg>
+                    </compilerArgs>
                 </configuration>
             </plugin>
 
@@ -189,6 +207,10 @@
                             <noManPages>true</noManPages>
                             <stripDebug>true</stripDebug>
                             <noHeaderFiles>true</noHeaderFiles>
+                            <options>
+                                <option>--add-reads</option>
+                                <option>dev.m1le.mjrmanager=ALL-UNNAMED</option>
+                            </options>
                         </configuration>
                     </execution>
                 </executions>

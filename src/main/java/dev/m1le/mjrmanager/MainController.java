@@ -15,7 +15,9 @@ import javafx.scene.layout.*;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.scene.control.ButtonBar;
+import javafx.scene.Scene;
 import javafx.geometry.Insets;
+import javafx.scene.layout.GridPane;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.LineNumberFactory;
 
@@ -56,6 +58,7 @@ public class MainController implements Initializable {
     private final ManifestService         manifestService   = new ManifestService();
     private final ExportService           exportService     = new ExportService(decompilerService);
     private final DependencyService       dependencyService = new DependencyService();
+    private final LiveEditService         liveEditService   = new LiveEditService();
 
     private boolean useProcyon = false;
 
@@ -70,11 +73,19 @@ public class MainController implements Initializable {
         String name;
         String status;
         boolean running;
+        long startTime;
 
         TaskInfo(String name, String status) {
             this.name = name;
             this.status = status;
             this.running = true;
+            this.startTime = System.currentTimeMillis();
+        }
+
+        String elapsed() {
+            long sec = (System.currentTimeMillis() - startTime) / 1000;
+            if (sec < 60) return sec + "с";
+            return (sec / 60) + "м " + (sec % 60) + "с";
         }
     }
 
@@ -111,10 +122,11 @@ public class MainController implements Initializable {
 
         progressBar.setOnMouseClicked(event -> {
             if (event.getClickCount() == 1) {
-                showTasksDialog();
+                showTasksPopup();
             }
         });
         progressBar.setCursor(javafx.scene.Cursor.HAND);
+        progressBar.setTooltip(new Tooltip("Фоновые задачи — нажмите для просмотра"));
     }
 
     private void setupDragAndDrop() {
@@ -264,6 +276,8 @@ public class MainController implements Initializable {
     private void onSaveJar() {
         if (jarService.getCurrentJarFile() == null) return;
 
+        String taskName = "Сохранение: " + jarService.getCurrentJarFile().getName();
+        addTask(taskName, "Запись файла...");
         logger.info("Начало сохранения JAR: " + jarService.getCurrentJarFile().getName());
         setStatus("Сохранение JAR...", true);
 
@@ -280,11 +294,13 @@ public class MainController implements Initializable {
 
         task.setOnSucceeded(e -> {
             setStatus("Сохранено: " + jarService.getCurrentJarFile().getName(), false);
+            removeTask(taskName);
             showInfo("Сохранено", "JAR сохранён. Создан бэкап с суффиксом _backup.jar");
         });
 
         task.setOnFailed(e -> {
             setStatus("Ошибка сохранения", false);
+            removeTask(taskName);
             logger.error("Ошибка сохранения JAR", task.getException());
             showError("Ошибка сохранения", task.getException().getMessage());
         });
@@ -309,6 +325,9 @@ public class MainController implements Initializable {
         logger.info("Сохранение JAR как: " + file.getAbsolutePath());
         setStatus("Сохранение JAR...", true);
 
+        String taskName = "Сохранение как: " + file.getName();
+        addTask(taskName, "Запись файла...");
+
         Task<Void> task = new Task<>() {
             @Override
             protected Void call() throws Exception {
@@ -322,10 +341,12 @@ public class MainController implements Initializable {
 
         task.setOnSucceeded(e -> {
             setStatus("Сохранено как: " + file.getName(), false);
+            removeTask(taskName);
         });
 
         task.setOnFailed(e -> {
             setStatus("Ошибка сохранения", false);
+            removeTask(taskName);
             logger.error("Ошибка сохранения JAR", task.getException());
             showError("Ошибка сохранения", task.getException().getMessage());
         });
@@ -468,6 +489,9 @@ public class MainController implements Initializable {
         logger.info("Начало декомпиляции: " + node.getFullPath());
         setStatus("Декомпиляция: " + node.getName() + "...", true);
 
+        String taskName = "Декомпиляция: " + node.getName();
+        addTask(taskName, "Запуск декомпилятора...");
+
         Task<String> task = new Task<>() {
             @Override
             protected String call() {
@@ -500,10 +524,12 @@ public class MainController implements Initializable {
             editorTabPane.getTabs().add(tab);
             editorTabPane.getSelectionModel().select(tab);
             setStatus("Декомпилирован: " + node.getName(), false);
+            removeTask(taskName);
         });
 
         task.setOnFailed(e -> {
             setStatus("Ошибка декомпиляции", false);
+            removeTask(taskName);
             logger.error("Ошибка декомпиляции: " + node.getFullPath(), task.getException());
             showError("Ошибка декомпиляции", task.getException().getMessage());
         });
@@ -978,24 +1004,110 @@ public class MainController implements Initializable {
 
     @FXML private void onExit()  { Platform.exit(); }
 
-    private void showTasksDialog() {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setTitle("Запущенные задачи");
-        alert.setHeaderText("Активные фоновые задачи:");
+    private void showTasksPopup() {
+        Stage popup = new Stage();
+        popup.initStyle(javafx.stage.StageStyle.UNDECORATED);
+        popup.initOwner(progressBar.getScene().getWindow());
 
-        if (activeTasks.isEmpty()) {
-            alert.setContentText("Нет активных задач");
-        } else {
-            ListView<String> taskList = new ListView<>();
-            for (TaskInfo task : activeTasks) {
-                String status = task.running ? "⏳" : "✓";
-                taskList.getItems().add(status + " " + task.name + " - " + task.status);
+        VBox root = new VBox();
+        root.setStyle("-fx-background-color: #21252b; -fx-border-color: #3a3f4b; -fx-border-width: 1; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.5), 12, 0, 0, 4);");
+        root.setPrefWidth(380);
+
+        HBox header = new HBox();
+        header.setStyle("-fx-background-color: #282c34; -fx-padding: 8 12 8 12; -fx-border-color: #3a3f4b; -fx-border-width: 0 0 1 0;");
+        header.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+
+        Label title = new Label("Фоновые задачи");
+        title.setStyle("-fx-text-fill: #abb2bf; -fx-font-size: 12px; -fx-font-weight: bold;");
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        Button closeBtn = new Button("✕");
+        closeBtn.setStyle("-fx-background-color: transparent; -fx-text-fill: #636d83; -fx-cursor: hand; -fx-padding: 0 4 0 4; -fx-font-size: 12px;");
+        closeBtn.setOnMouseEntered(e -> closeBtn.setStyle(closeBtn.getStyle().replace("#636d83", "#e06c75")));
+        closeBtn.setOnMouseExited(e -> closeBtn.setStyle(closeBtn.getStyle().replace("#e06c75", "#636d83")));
+        closeBtn.setOnAction(e -> popup.close());
+
+        header.getChildren().addAll(title, spacer, closeBtn);
+
+        VBox taskList = new VBox(0);
+        taskList.setStyle("-fx-padding: 4 0 4 0;");
+
+        Runnable refresh = () -> {
+            taskList.getChildren().clear();
+            if (activeTasks.isEmpty()) {
+                Label empty = new Label("Нет активных задач");
+                empty.setStyle("-fx-text-fill: #4b5263; -fx-font-size: 12px; -fx-padding: 12 16 12 16;");
+                taskList.getChildren().add(empty);
+            } else {
+                for (TaskInfo task : activeTasks) {
+                    HBox row = new HBox(10);
+                    row.setStyle("-fx-padding: 8 16 8 16; -fx-background-color: transparent;");
+                    row.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+                    row.setOnMouseEntered(e -> row.setStyle("-fx-padding: 8 16 8 16; -fx-background-color: #2c313a;"));
+                    row.setOnMouseExited(e -> row.setStyle("-fx-padding: 8 16 8 16; -fx-background-color: transparent;"));
+
+                    ProgressIndicator spinner = new ProgressIndicator(-1);
+                    spinner.setPrefSize(14, 14);
+                    spinner.setStyle("-fx-progress-color: #528bff;");
+
+                    VBox info = new VBox(2);
+                    Label nameLabel = new Label(task.name);
+                    nameLabel.setStyle("-fx-text-fill: #abb2bf; -fx-font-size: 12px;");
+                    Label statusLabel2 = new Label(task.status + "  •  " + task.elapsed());
+                    statusLabel2.setStyle("-fx-text-fill: #4b5263; -fx-font-size: 11px;");
+                    info.getChildren().addAll(nameLabel, statusLabel2);
+                    HBox.setHgrow(info, Priority.ALWAYS);
+
+                    row.getChildren().addAll(spinner, info);
+                    taskList.getChildren().add(row);
+                }
             }
-            taskList.setPrefHeight(200);
-            alert.getDialogPane().setContent(taskList);
-        }
+        };
 
-        alert.showAndWait();
+        refresh.run();
+
+        javafx.animation.Timeline timeline = new javafx.animation.Timeline(
+            new javafx.animation.KeyFrame(javafx.util.Duration.seconds(1), e -> {
+                if (popup.isShowing()) refresh.run();
+                else ((javafx.animation.Timeline) e.getSource()).stop();
+            })
+        );
+        timeline.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        timeline.play();
+        popup.setOnHidden(e -> timeline.stop());
+
+        ScrollPane scroll = new ScrollPane(taskList);
+        scroll.setFitToWidth(true);
+        scroll.setStyle("-fx-background-color: transparent; -fx-background: transparent;");
+        scroll.setMaxHeight(300);
+
+        root.getChildren().addAll(header, scroll);
+
+        javafx.scene.Scene scene = new javafx.scene.Scene(root);
+        scene.setFill(null);
+        popup.setScene(scene);
+
+        javafx.geometry.Bounds bounds = progressBar.localToScreen(progressBar.getBoundsInLocal());
+        popup.setX(bounds.getMinX());
+        popup.setY(bounds.getMinY() - root.getPrefHeight() - 10);
+
+        popup.show();
+
+        popup.setY(bounds.getMinY() - popup.getHeight() - 4);
+
+        scene.setOnKeyPressed(e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.ESCAPE) popup.close();
+        });
+
+        popup.focusedProperty().addListener((obs, o, focused) -> {
+            if (!focused) popup.close();
+        });
+    }
+
+    private void showTasksDialog() {
+        showTasksPopup();
     }
 
     private void addTask(String name, String status) {
@@ -1077,58 +1189,205 @@ public class MainController implements Initializable {
             return;
         }
 
+        ButtonType btnRun    = new ButtonType("Запустить");
+        ButtonType btnLive   = new ButtonType("Live режим (hot-swap)");
+        ButtonType btnCancel = new ButtonType("Отмена", ButtonBar.ButtonData.CANCEL_CLOSE);
+
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
         confirm.setTitle("Запуск JAR");
-        confirm.setHeaderText("Запустить JAR?");
-        confirm.setContentText("Main-Class: " + mainClass + "\nФайл: " + jarService.getCurrentJarFile().getName());
+        confirm.setHeaderText(jarService.getCurrentJarFile().getName());
+        confirm.setContentText("Main-Class: " + mainClass);
+        confirm.getButtonTypes().setAll(btnRun, btnLive, btnCancel);
 
-        Optional<ButtonType> result = confirm.showAndWait();
-        if (result.isEmpty() || result.get() != ButtonType.OK) return;
+        Optional<ButtonType> choice = confirm.showAndWait();
+        if (choice.isEmpty() || choice.get() == btnCancel) return;
 
+        boolean liveMode = choice.get() == btnLive;
         File jarFile = jarService.getCurrentJarFile();
-        String taskName = "Запуск: " + jarFile.getName();
-        addTask(taskName, "Запуск...");
-        setStatus("Запуск JAR: " + jarFile.getName(), true);
+
+        if (liveEditService.isRunning()) {
+            liveEditService.stop();
+        }
+
+        showRunConsole(jarFile, mainClass, liveMode);
+    }
+
+    private void showRunConsole(File jarFile, String mainClass, boolean liveMode) {
+        Stage consoleStage = new Stage();
+        consoleStage.setTitle((liveMode ? "[LIVE] " : "") + jarFile.getName() + " — вывод");
+
+        javafx.scene.control.TextArea outputArea = new javafx.scene.control.TextArea();
+        outputArea.setEditable(false);
+        outputArea.setWrapText(true);
+        outputArea.setStyle("-fx-control-inner-background: #1d2026; -fx-text-fill: #abb2bf; -fx-font-family: 'Consolas', monospace; -fx-font-size: 12px;");
+
+        Button btnStop = new Button("Остановить");
+        btnStop.setStyle("-fx-background-color: #e06c75; -fx-text-fill: white; -fx-cursor: hand; -fx-padding: 4 12 4 12;");
+
+        Label statusLbl = new Label(liveMode ? "🟢 Live режим активен — компилируйте классы для hot-swap" : "▶ Запущен");
+        statusLbl.setStyle("-fx-text-fill: #98c379; -fx-font-size: 11px;");
+
+        HBox toolbar = new HBox(10, statusLbl, new Region(), btnStop);
+        HBox.setHgrow(toolbar.getChildren().get(1), Priority.ALWAYS);
+        toolbar.setStyle("-fx-background-color: #21252b; -fx-padding: 6 10 6 10;");
+        toolbar.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+
+        VBox root = new VBox(toolbar, outputArea);
+        VBox.setVgrow(outputArea, Priority.ALWAYS);
+
+        consoleStage.setScene(new javafx.scene.Scene(root, 700, 450));
+        consoleStage.show();
+
+        Runnable appendLine = null;
+
+        LiveEditService.OutputCallback callback = new LiveEditService.OutputCallback() {
+            @Override
+            public void onLine(String line) {
+                Platform.runLater(() -> {
+                    outputArea.appendText(line + "\n");
+                    outputArea.setScrollTop(Double.MAX_VALUE);
+                    logger.info("[JAR] " + line);
+                });
+            }
+            @Override
+            public void onExit(int code) {
+                Platform.runLater(() -> {
+                    outputArea.appendText("\n--- Процесс завершён с кодом " + code + " ---\n");
+                    statusLbl.setText("⏹ Завершён (код " + code + ")");
+                    statusLbl.setStyle("-fx-text-fill: #e06c75; -fx-font-size: 11px;");
+                    setStatus("JAR завершён: " + jarFile.getName(), false);
+                });
+            }
+        };
 
         Task<Void> task = new Task<>() {
             @Override
             protected Void call() throws Exception {
-                ProcessBuilder pb = new ProcessBuilder(
-                    "java", "-jar", jarFile.getAbsolutePath()
-                );
-                pb.redirectErrorStream(true);
-                pb.directory(jarFile.getParentFile());
-                Process process = pb.start();
+                if (liveMode) {
+                    liveEditService.startWithAgent(jarFile, mainClass, callback);
+                    Platform.runLater(() -> {
+                        outputArea.appendText("=== Live режим: агент подключён, порт hot-swap: 57321 ===\n");
+                        outputArea.appendText("=== JDWP debug порт: 5005 ===\n");
+                        outputArea.appendText("=== Компилируйте классы в редакторе — они будут перезагружены в памяти ===\n\n");
+                    });
+                } else {
+                    String javaExe = ProcessHandle.current().info().command().orElse("java");
+                    ProcessBuilder pb = new ProcessBuilder(javaExe, "-jar", jarFile.getAbsolutePath());
+                    pb.redirectErrorStream(true);
+                    pb.directory(jarFile.getParentFile());
+                    Process process = pb.start();
 
-                StringBuilder output = new StringBuilder();
-                try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                        new java.io.InputStreamReader(process.getInputStream()))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        output.append(line).append("\n");
-                        logger.info("[JAR] " + line);
+                    try (java.io.BufferedReader br = new java.io.BufferedReader(
+                            new java.io.InputStreamReader(process.getInputStream()))) {
+                        String line;
+                        while ((line = br.readLine()) != null) {
+                            callback.onLine(line);
+                        }
                     }
+                    callback.onExit(process.waitFor());
                 }
-
-                int exitCode = process.waitFor();
-                logger.info("JAR завершён с кодом: " + exitCode);
                 return null;
             }
         };
 
+        btnStop.setOnAction(e -> {
+            liveEditService.stop();
+            task.cancel();
+            outputArea.appendText("\n--- Остановлено пользователем ---\n");
+            statusLbl.setText("⏹ Остановлен");
+            statusLbl.setStyle("-fx-text-fill: #e06c75; -fx-font-size: 11px;");
+        });
+
+        consoleStage.setOnCloseRequest(e -> {
+            liveEditService.stop();
+            task.cancel();
+        });
+
+        addTask("Запуск: " + jarFile.getName(), liveMode ? "Live режим" : "Запущен");
+        setStatus("Запущен: " + jarFile.getName(), true);
+        new Thread(task, "jar-runner").start();
+    }
+
+    @FXML
+    private void onLiveCompile() {
+        if (!liveEditService.isRunning()) {
+            showError("Live режим не активен", "Сначала запустите JAR в Live режиме через кнопку 'Запустить'");
+            return;
+        }
+
+        Tab selectedTab = editorTabPane.getSelectionModel().getSelectedItem();
+        if (selectedTab == null) return;
+        String tabId = (String) selectedTab.getUserData();
+        OpenedTab openedTab = openedTabs.get(tabId);
+        if (openedTab == null) return;
+        CodeArea codeArea = findCodeAreaInTab(selectedTab);
+        if (codeArea == null) return;
+
+        String sourceCode = codeArea.getText();
+        String entryPath  = openedTab.getEntry().getFullPath();
+        String dotClassName = entryPath.replace(".class", "").replace('/', '.');
+
+        setStatus("Компиляция для hot-swap: " + openedTab.getEntry().getName(), true);
+
+        String taskName = "Hot-swap: " + openedTab.getEntry().getName();
+        addTask(taskName, "Компиляция...");
+
+        Task<CompilerService.CompileResult> task = new Task<>() {
+            @Override
+            protected CompilerService.CompileResult call() {
+                return compilerService.compile(entryPath, sourceCode, jarService.getJarEntries());
+            }
+        };
+
         task.setOnSucceeded(e -> {
-            setStatus("JAR завершён: " + jarFile.getName(), false);
+            CompilerService.CompileResult result = task.getValue();
             removeTask(taskName);
+            if (!result.success || result.bytecode == null) {
+                setStatus("Ошибка компиляции", false);
+                showError("Ошибка компиляции", result.errors);
+                return;
+            }
+
+            updateTaskStatus(taskName, "Hot-swap...");
+            String swapResult = liveEditService.hotSwapClass(dotClassName, result.bytecode);
+
+            if (swapResult.startsWith("OK")) {
+                jarService.updateClassBytes(entryPath, result.bytecode);
+                setStatus("Hot-swap: " + openedTab.getEntry().getName(), false);
+                logger.success("Hot-swap: " + swapResult);
+
+                Alert alert = new Alert(Alert.AlertType.INFORMATION);
+                alert.setTitle("Hot-swap");
+                alert.setHeaderText("Класс перезагружен в памяти");
+                TextArea ta = new TextArea(swapResult + "\n\nКласс: " + dotClassName + "\nРазмер байткода: " + result.bytecode.length + " байт");
+                ta.setEditable(false);
+                ta.setPrefHeight(100);
+                alert.getDialogPane().setContent(ta);
+                alert.showAndWait();
+            } else {
+                setStatus("Hot-swap не удался", false);
+                logger.warn("Hot-swap: " + swapResult);
+
+                Alert alert = new Alert(Alert.AlertType.ERROR);
+                alert.setTitle("Hot-swap не удался");
+                alert.setHeaderText("Ответ агента:");
+                TextArea ta = new TextArea(swapResult);
+                ta.setEditable(false);
+                ta.setWrapText(true);
+                ta.setPrefHeight(150);
+                alert.getDialogPane().setContent(ta);
+                alert.getDialogPane().setPrefWidth(550);
+                alert.showAndWait();
+            }
         });
 
         task.setOnFailed(e -> {
-            setStatus("Ошибка запуска JAR", false);
-            logger.error("Ошибка запуска JAR", task.getException());
-            showError("Ошибка запуска", task.getException().getMessage());
             removeTask(taskName);
+            setStatus("Ошибка", false);
+            showError("Ошибка", task.getException().getMessage());
         });
 
-        new Thread(task, "jar-runner").start();
+        new Thread(task, "live-compiler").start();
     }
 
     @FXML
@@ -1304,6 +1563,9 @@ public class MainController implements Initializable {
         setStatus("Поиск: " + query + "...", true);
         logger.info("Глобальный поиск: " + query);
 
+        String taskName = "Поиск: \"" + query + "\"";
+        addTask(taskName, "Сканирование классов...");
+
         Task<List<SearchService.SearchResult>> task = new Task<>() {
             @Override
             protected List<SearchService.SearchResult> call() {
@@ -1316,11 +1578,13 @@ public class MainController implements Initializable {
         task.setOnSucceeded(e -> {
             List<SearchService.SearchResult> results = task.getValue();
             setStatus("Найдено: " + results.size() + " совпадений", false);
+            removeTask(taskName);
             showSearchResults(query, results);
         });
 
         task.setOnFailed(e -> {
             setStatus("Ошибка поиска", false);
+            removeTask(taskName);
             logger.error("Ошибка глобального поиска", task.getException());
             showError("Ошибка поиска", task.getException().getMessage());
         });
@@ -1559,37 +1823,65 @@ public class MainController implements Initializable {
             return;
         }
 
+        ExportService.ExportSettings settings = showExportSettingsDialog();
+        if (settings == null) return;
+
         javafx.stage.DirectoryChooser chooser = new javafx.stage.DirectoryChooser();
         chooser.setTitle("Выберите папку для экспорта");
         Stage stage = (Stage) fileTree.getScene().getWindow();
         File outputDir = chooser.showDialog(stage);
-
         if (outputDir == null) return;
 
-        Alert progressAlert = new Alert(Alert.AlertType.INFORMATION);
-        progressAlert.setTitle("Экспорт в исходники");
-        progressAlert.setHeaderText("Экспорт классов...");
+        Stage progressStage = new Stage();
+        progressStage.initOwner(stage);
+        progressStage.initStyle(javafx.stage.StageStyle.UTILITY);
+        progressStage.setTitle("Экспорт в исходники");
+        progressStage.setResizable(false);
 
-        ProgressBar progressBar = new ProgressBar(0);
-        progressBar.setPrefWidth(400);
+        ProgressBar exportProgressBar = new ProgressBar(0);
+        exportProgressBar.setPrefWidth(420);
         Label progressLabel = new Label("Подготовка...");
+        progressLabel.setStyle("-fx-text-fill: #abb2bf; -fx-font-size: 12px;");
+        Label subLabel = new Label("");
+        subLabel.setStyle("-fx-text-fill: #636d83; -fx-font-size: 11px;");
 
-        VBox vbox = new VBox(10, progressLabel, progressBar);
-        progressAlert.getDialogPane().setContent(vbox);
-        progressAlert.getDialogPane().getButtonTypes().clear();
+        VBox vbox = new VBox(10, progressLabel, exportProgressBar, subLabel);
+        vbox.setStyle("-fx-background-color: #282c34; -fx-padding: 20;");
+        progressStage.setScene(new javafx.scene.Scene(vbox, 460, 110));
+        progressStage.show();
 
-        progressAlert.show();
+        final ExportService.ExportSettings finalSettings = settings;
+        final FabricRemapService fabricService = new FabricRemapService();
 
         Task<Void> task = new Task<>() {
             @Override
             protected Void call() throws Exception {
+                Map<String, byte[]> entries = finalSettings.remapFabric
+                    ? new LinkedHashMap<>(jarService.getJarEntries())
+                    : jarService.getJarEntries();
+
+                if (finalSettings.remapFabric && fabricService.isFabricMod(entries)) {
+                    String mcVersion = fabricService.getMinecraftVersion(entries);
+                    if (mcVersion != null) {
+                        Platform.runLater(() -> progressLabel.setText("Снятие Yarn маппингов..."));
+                        FabricRemapService.RemapResult remapResult = fabricService.remapJar(
+                            entries, mcVersion,
+                            msg -> Platform.runLater(() -> subLabel.setText(msg))
+                        );
+                        logger.info("Ремаппинг завершён: классов=" + remapResult.remappedClasses);
+                    } else {
+                        logger.warn("Версия Minecraft не найдена в fabric.mod.json");
+                        Platform.runLater(() -> subLabel.setText("Версия MC не найдена, ремаппинг пропущен"));
+                    }
+                }
+
                 exportService.exportToSources(
-                    jarService.getJarEntries(),
-                    outputDir,
+                    entries, outputDir, finalSettings,
                     (current, total, file) -> {
                         updateProgress(current, total);
                         Platform.runLater(() -> {
-                            progressLabel.setText("Экспорт: " + current + " / " + total + "\n" + file);
+                            progressLabel.setText("Экспорт: " + current + " / " + total);
+                            subLabel.setText(file);
                         });
                     }
                 );
@@ -1597,20 +1889,120 @@ public class MainController implements Initializable {
             }
         };
 
-        progressBar.progressProperty().bind(task.progressProperty());
+        exportProgressBar.progressProperty().bind(task.progressProperty());
+
+        String exportTaskName = "Экспорт: " + jarService.getCurrentJarFile().getName();
+        addTask(exportTaskName, "Декомпиляция классов...");
 
         task.setOnSucceeded(e -> {
-            progressAlert.close();
+            progressStage.close();
+            removeTask(exportTaskName);
             showInfo("Успех", "Исходники экспортированы в:\n" + outputDir.getAbsolutePath());
             logger.info("Экспорт завершён: " + outputDir.getAbsolutePath());
         });
 
         task.setOnFailed(e -> {
-            progressAlert.close();
+            progressStage.close();
+            removeTask(exportTaskName);
             showError("Ошибка", "Не удалось экспортировать: " + task.getException().getMessage());
             logger.error("Ошибка экспорта", task.getException());
         });
 
         new Thread(task, "export-sources").start();
+    }
+
+    private ExportService.ExportSettings showExportSettingsDialog() {
+        boolean isFabric = new FabricRemapService().isFabricMod(jarService.getJarEntries());
+
+        Dialog<ExportService.ExportSettings> dialog = new Dialog<>();
+        dialog.setTitle("Настройки экспорта");
+        dialog.setHeaderText("Параметры экспорта в исходники");
+
+        ButtonType exportBtn = new ButtonType("Экспортировать", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(exportBtn, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(16);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(16));
+
+        CheckBox cbClasses   = new CheckBox("Экспортировать классы (.java)");
+        CheckBox cbResources = new CheckBox("Экспортировать ресурсы");
+        CheckBox cbMetaInf   = new CheckBox("Экспортировать META-INF");
+        CheckBox cbReadme    = new CheckBox("Создать README.txt");
+        CheckBox cbSkipInner = new CheckBox("Пропустить внутренние классы ($)");
+        CheckBox cbProcyon   = new CheckBox("Использовать Procyon (вместо CFR)");
+        TextField tfFilter   = new TextField();
+
+        cbClasses.setSelected(true);
+        cbResources.setSelected(true);
+        cbMetaInf.setSelected(true);
+        cbReadme.setSelected(true);
+
+        tfFilter.setPromptText("com.example (оставьте пустым для всех)");
+        tfFilter.setPrefWidth(260);
+
+        int row = 0;
+        Label secGeneral = new Label("Общие");
+        secGeneral.setStyle("-fx-font-weight: bold; -fx-text-fill: #528bff;");
+        grid.add(secGeneral, 0, row++, 2, 1);
+        grid.add(cbClasses,   0, row++, 2, 1);
+        grid.add(cbResources, 0, row++, 2, 1);
+        grid.add(cbMetaInf,   0, row++, 2, 1);
+        grid.add(cbReadme,    0, row++, 2, 1);
+        grid.add(cbSkipInner, 0, row++, 2, 1);
+        grid.add(cbProcyon,   0, row++, 2, 1);
+        grid.add(new Label("Фильтр пакетов:"), 0, row);
+        grid.add(tfFilter, 1, row++);
+
+        CheckBox cbFabric = null;
+        CheckBox cbFabricClasses = null;
+        CheckBox cbFabricMethods = null;
+        CheckBox cbFabricFields  = null;
+
+        if (isFabric) {
+            FabricRemapService fab = new FabricRemapService();
+            String modId = fab.getModId(jarService.getJarEntries());
+            String mcVer = fab.getMinecraftVersion(jarService.getJarEntries());
+
+            Label secFabric = new Label("Fabric Mod — " + modId + (mcVer != null ? " (MC " + mcVer + ")" : " (версия не найдена)"));
+            secFabric.setStyle("-fx-font-weight: bold; -fx-text-fill: #98c379;");
+            grid.add(secFabric, 0, row++, 2, 1);
+
+            cbFabric = new CheckBox("Снять Yarn маппинги (intermediary → named)");
+            cbFabric.setSelected(true);
+            Label fabricNote = new Label("Скачивает маппинги с maven.fabricmc.net и применяет TinyRemapper");
+            fabricNote.setStyle("-fx-text-fill: #4b5263; -fx-font-size: 11px;");
+            grid.add(cbFabric, 0, row++, 2, 1);
+            grid.add(fabricNote, 0, row++, 2, 1);
+        }
+
+        dialog.getDialogPane().setContent(grid);
+
+        final CheckBox finalCbFabric = cbFabric;
+        final CheckBox finalCbFabricClasses = cbFabricClasses;
+        final CheckBox finalCbFabricMethods = cbFabricMethods;
+        final CheckBox finalCbFabricFields  = cbFabricFields;
+
+        dialog.setResultConverter(btn -> {
+            if (btn != exportBtn) return null;
+            ExportService.ExportSettings s = new ExportService.ExportSettings();
+            s.exportClasses      = cbClasses.isSelected();
+            s.exportResources    = cbResources.isSelected();
+            s.exportMetaInf      = cbMetaInf.isSelected();
+            s.createReadme       = cbReadme.isSelected();
+            s.skipInnerClasses   = cbSkipInner.isSelected();
+            s.useProcyon         = cbProcyon.isSelected();
+            s.packageFilter      = tfFilter.getText().trim();
+            if (finalCbFabric != null) {
+                s.remapFabric    = finalCbFabric.isSelected();
+                s.remapClasses   = finalCbFabricClasses != null && finalCbFabricClasses.isSelected();
+                s.remapMethods   = finalCbFabricMethods != null && finalCbFabricMethods.isSelected();
+                s.remapFields    = finalCbFabricFields  != null && finalCbFabricFields.isSelected();
+            }
+            return s;
+        });
+
+        return dialog.showAndWait().orElse(null);
     }
 }

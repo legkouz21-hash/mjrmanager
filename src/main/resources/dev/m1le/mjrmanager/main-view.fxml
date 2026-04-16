@@ -26,6 +26,7 @@
                 </Menu>
                 <Menu text="Редактор">
                     <MenuItem text="Скомпилировать класс" onAction="#onCompileCurrentTab" accelerator="Ctrl+Shift+C"/>
+                    <MenuItem text="Hot-swap (Live compile)" onAction="#onLiveCompile" accelerator="Ctrl+Shift+H"/>
                     <SeparatorMenuItem/>
                     <MenuItem text="Глобальный поиск..." onAction="#onGlobalSearch" accelerator="Ctrl+Shift+F"/>
                     <SeparatorMenuItem/>
