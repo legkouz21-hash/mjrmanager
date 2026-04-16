@@ -116,6 +116,11 @@
             <artifactId>tiny-remapper</artifactId>
             <version>0.10.4</version>
         </dependency>
+        <dependency>
+            <groupId>net.fabricmc</groupId>
+            <artifactId>access-widener</artifactId>
+            <version>2.1.0</version>
+        </dependency>
     </dependencies>
 
     <build>

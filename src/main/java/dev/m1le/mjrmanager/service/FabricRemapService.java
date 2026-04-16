@@ -1,9 +1,12 @@
 package dev.m1le.mjrmanager.service;
 
-import net.fabricmc.tinyremapper.*;
+import dev.m1le.mjrmanager.fabricremapper.RemapUtil;
+import dev.m1le.mjrmanager.fabricremapper.YarnDownloading;
+import net.fabricmc.tinyremapper.OutputConsumerPath;
+import net.fabricmc.tinyremapper.TinyRemapper;
+import net.fabricmc.tinyremapper.TinyUtils;
 
 import java.io.*;
-import java.net.*;
 import java.nio.file.*;
 import java.util.*;
 import java.util.regex.*;
@@ -34,11 +37,10 @@ public class FabricRemapService {
         if (json == null) json = jarEntries.get("META-INF/fabric.mod.json");
         if (json == null) return null;
         String content = new String(json);
-        String[] lines = content.split("\n");
-        for (String line : lines) {
+        for (String line : content.split("\n")) {
             if (line.contains("\"minecraft\"")) {
                 String ver = line.split(":")[1].replace("\"", "").replace(",", "").trim();
-                ver = ver.replaceAll("[~^>=]", "").trim();
+                ver = ver.replaceAll("[~^>=*]", "").trim();
                 if (ver.matches("\\d+\\.\\d+.*")) return ver;
             }
         }
@@ -48,41 +50,25 @@ public class FabricRemapService {
     public RemapResult remapJar(Map<String, byte[]> jarEntries, String mcVersion, ProgressCallback progress) throws IOException {
         RemapResult result = new RemapResult();
 
-        progress.onProgress("Получение версии Yarn для MC " + mcVersion + "...");
-        String yarnVersion = fetchLatestYarnVersion(mcVersion);
-        if (yarnVersion == null) {
-            throw new IOException("Не удалось найти Yarn маппинги для Minecraft " + mcVersion);
-        }
-        progress.onProgress("Yarn: " + yarnVersion);
-
-        String mappingsUrl = "https://maven.fabricmc.net/net/fabricmc/yarn/"
-            + yarnVersion + "/yarn-" + yarnVersion + "-tiny.gz";
-
-        progress.onProgress("Скачивание маппингов...");
-        Path mappingsFile = Files.createTempFile("yarn-mappings-", ".tiny.gz");
-        Path inputJar    = Files.createTempFile("input-", ".jar");
-        Path outputJar   = Files.createTempFile("output-", ".jar");
+        Path inputJar  = Files.createTempFile("mjr-input-",  ".jar");
+        Path outputJar = Files.createTempFile("mjr-output-", ".jar");
+        Files.deleteIfExists(outputJar);
 
         try {
-            downloadFile(mappingsUrl, mappingsFile, progress);
-            progress.onProgress("Маппинги скачаны: " + (Files.size(mappingsFile) / 1024) + " KB");
-
             progress.onProgress("Создание временного JAR...");
             writeJar(jarEntries, inputJar);
+            progress.onProgress("JAR создан: " + (Files.size(inputJar) / 1024) + " KB");
 
-            long jarSize = Files.size(inputJar);
-            progress.onProgress("Временный JAR создан: " + (jarSize / 1024) + " KB");
-
-            if (jarSize < 22) {
-                throw new IOException("Временный JAR пустой или повреждён (размер: " + jarSize + " байт)");
+            progress.onProgress("Скачивание Yarn маппингов для MC " + mcVersion + "...");
+            Path mappingsGz = YarnDownloading.resolve(mcVersion);
+            if (mappingsGz == null) {
+                throw new IOException("Не удалось скачать Yarn маппинги для MC " + mcVersion);
             }
+            progress.onProgress("Маппинги скачаны: " + mappingsGz.getFileName());
 
-            progress.onProgress("Запуск TinyRemapper...");
-
-            Files.deleteIfExists(outputJar);
-
+            progress.onProgress("Запуск TinyRemapper (шаг 1)...");
             TinyRemapper remapper = TinyRemapper.newRemapper()
-                .withMappings(TinyUtils.createTinyMappingProvider(mappingsFile, "intermediary", "named"))
+                .withMappings(TinyUtils.createTinyMappingProvider(mappingsGz, "intermediary", "named"))
                 .renameInvalidLocals(true)
                 .rebuildSourceFilenames(true)
                 .ignoreConflicts(true)
@@ -100,21 +86,30 @@ public class FabricRemapService {
                 remapper.finish();
             }
 
+            progress.onProgress("Шаг 1 завершён. Запуск шага 2 (ASM ремаппинг полей/методов)...");
+            Path mappingsTiny2 = YarnDownloading.resolveTiny2(mcVersion);
+            if (mappingsTiny2 != null) {
+                Map<String, String> asmMappings = RemapUtil.getMappings(mappingsTiny2);
+                progress.onProgress("Загружено ASM маппингов: " + asmMappings.size());
+                RemapUtil.remapJar(outputJar, remapper, asmMappings);
+                progress.onProgress("Шаг 2 завершён");
+                Files.deleteIfExists(mappingsTiny2);
+                if (YarnDownloading.path != null) Files.deleteIfExists(YarnDownloading.path);
+            }
+
+            Files.deleteIfExists(mappingsGz);
+
             progress.onProgress("Чтение результата...");
             Map<String, byte[]> remappedEntries = readJar(outputJar);
 
             int before = (int) jarEntries.keySet().stream().filter(k -> k.endsWith(".class")).count();
-
             jarEntries.clear();
             jarEntries.putAll(remappedEntries);
+            result.remappedClasses = (int) jarEntries.keySet().stream().filter(k -> k.endsWith(".class")).count();
 
-            int after = (int) jarEntries.keySet().stream().filter(k -> k.endsWith(".class")).count();
-            result.remappedClasses = after;
-
-            progress.onProgress("Ремаппинг завершён: " + before + " → " + after + " классов");
+            progress.onProgress("Ремаппинг завершён: " + before + " → " + result.remappedClasses + " классов");
 
         } finally {
-            Files.deleteIfExists(mappingsFile);
             Files.deleteIfExists(inputJar);
             Files.deleteIfExists(outputJar);
         }
@@ -123,25 +118,17 @@ public class FabricRemapService {
     }
 
     private void writeJar(Map<String, byte[]> entries, Path dest) throws IOException {
+        Set<String> added = new HashSet<>();
         try (ZipOutputStream zos = new ZipOutputStream(new BufferedOutputStream(Files.newOutputStream(dest)))) {
-            Set<String> added = new HashSet<>();
-
             for (Map.Entry<String, byte[]> e : entries.entrySet()) {
                 String name = e.getKey();
                 byte[] data = e.getValue();
-
-                if (data == null || data.length == 0) continue;
-                if (added.contains(name)) continue;
-
-                ZipEntry ze = new ZipEntry(name);
-                ze.setTime(System.currentTimeMillis());
-
-                zos.putNextEntry(ze);
+                if (data == null || data.length == 0 || added.contains(name)) continue;
+                zos.putNextEntry(new ZipEntry(name));
                 zos.write(data);
                 zos.closeEntry();
                 added.add(name);
             }
-
             zos.finish();
         }
     }
@@ -158,56 +145,6 @@ public class FabricRemapService {
             }
         }
         return result;
-    }
-
-    private String fetchLatestYarnVersion(String mcVersion) {
-        try {
-            URL url = new URL("https://meta.fabricmc.net/v2/versions/yarn/" + mcVersion);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(8000);
-            conn.setReadTimeout(8000);
-            conn.setRequestProperty("User-Agent", "MJRManager/1.0");
-            if (conn.getResponseCode() != 200) return null;
-
-            StringBuilder sb = new StringBuilder();
-            try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
-                String line;
-                while ((line = br.readLine()) != null) sb.append(line);
-            }
-
-            Pattern buildPat = Pattern.compile("\"build\"\\s*:\\s*(\\d+)");
-            Matcher m = buildPat.matcher(sb.toString());
-            int latestBuild = 0;
-            while (m.find()) {
-                int build = Integer.parseInt(m.group(1));
-                if (build > latestBuild) latestBuild = build;
-            }
-
-            return latestBuild > 0 ? mcVersion + "+build." + latestBuild : null;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private void downloadFile(String urlStr, Path dest, ProgressCallback progress) throws IOException {
-        HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
-        conn.setConnectTimeout(15000);
-        conn.setReadTimeout(60000);
-        conn.setRequestProperty("User-Agent", "MJRManager/1.0");
-
-        int total = conn.getContentLength();
-        try (InputStream is = conn.getInputStream();
-             OutputStream os = Files.newOutputStream(dest)) {
-            byte[] buf = new byte[16384];
-            int read, downloaded = 0;
-            while ((read = is.read(buf)) != -1) {
-                os.write(buf, 0, read);
-                downloaded += read;
-                if (total > 0) {
-                    progress.onProgress("Скачивание: " + (downloaded / 1024) + " KB / " + (total / 1024) + " KB");
-                }
-            }
-        }
     }
 
     @FunctionalInterface

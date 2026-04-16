@@ -13,6 +13,10 @@
         <configuration>
           <source>17</source>
           <target>17</target>
+          <compilerArgs>
+            <arg>--add-reads</arg>
+            <arg>dev.m1le.mjrmanager=ALL-UNNAMED</arg>
+          </compilerArgs>
         </configuration>
       </plugin>
       <plugin>
@@ -84,12 +88,22 @@
               <noManPages>true</noManPages>
               <stripDebug>true</stripDebug>
               <noHeaderFiles>true</noHeaderFiles>
+              <options>
+                <option>--add-reads</option>
+                <option>dev.m1le.mjrmanager=ALL-UNNAMED</option>
+              </options>
             </configuration>
           </execution>
         </executions>
       </plugin>
     </plugins>
   </build>
+  <repositories>
+    <repository>
+      <id>fabricmc</id>
+      <url>https://maven.fabricmc.net/</url>
+    </repository>
+  </repositories>
   <properties>
     <maven.compiler.target>17</maven.compiler.target>
     <maven.compiler.source>17</maven.compiler.source>
