@@ -19,29 +19,23 @@ import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
-
 public class YarnDownloading {
+
     public static Path path;
 
     public static Path resolve(String minecraftVersion) {
         String mappingsVersion = getMappingsVersion(minecraftVersion);
-        Path currentDirectory = Paths.get("");
+        Path currentDirectory = Paths.get(System.getProperty("java.io.tmpdir"));
         Path mappingsTemp;
 
         try {
-            String name = System.getProperty("os.name", "generic").toLowerCase(Locale.ENGLISH);
-
-            if (name.contains("win")) {
-                mappingsTemp = currentDirectory.resolve("mappings.gz");
-            } else {
-                mappingsTemp = currentDirectory.resolve("mappings" + mappingsVersion);
-            }
+            mappingsTemp = Files.createTempFile("yarn-mappings-", ".gz");
 
             try (InputStream inputStream = getMappingsFromMaven(mappingsVersion)) {
                 Files.copy(inputStream, mappingsTemp, StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (Exception e) {
-            Main.print("Error during downloading mappings: " + e.getMessage(), true);
+            System.err.println("[YarnDownloading] Error downloading mappings: " + e.getMessage());
             return null;
         }
 
@@ -50,18 +44,10 @@ public class YarnDownloading {
 
     public static Path resolveTiny2(String minecraftVersion) {
         String mappingsVersion = getMappingsVersion(minecraftVersion);
-        Path currentDirectory = Paths.get("");
         Path mappingsTemp;
-        String fileMappings = "mappings.tiny";
 
         try {
-            String name = System.getProperty("os.name", "generic").toLowerCase(Locale.ENGLISH);
-
-            if (name.contains("win")) {
-                mappingsTemp = currentDirectory.resolve("mappings-v2.zip");
-            } else {
-                mappingsTemp = currentDirectory.resolve("mappings-v2" + mappingsVersion);
-            }
+            mappingsTemp = Files.createTempFile("yarn-v2-", ".zip");
 
             try (InputStream inputStream = getTiny2Mappings(mappingsVersion)) {
                 Files.copy(inputStream, mappingsTemp, StandardCopyOption.REPLACE_EXISTING);
@@ -69,23 +55,23 @@ public class YarnDownloading {
 
             path = mappingsTemp;
         } catch (Exception e) {
-            Main.print("Error during resolving Tiny2: " + e.getMessage(), true);
+            System.err.println("[YarnDownloading] Error resolving Tiny2: " + e.getMessage());
             return null;
         }
 
-        return extractFileFromZip(mappingsTemp, fileMappings, currentDirectory);
+        Path outputDir = Paths.get(System.getProperty("java.io.tmpdir"));
+        return extractFileFromZip(mappingsTemp, "mappings.tiny", outputDir);
     }
 
     private static Path extractFileFromZip(Path zipPath, String targetFileName, Path outputDir) {
         try {
             try (ZipFile zipFile = new ZipFile(zipPath.toFile())) {
                 Enumeration<? extends ZipEntry> entries = zipFile.entries();
-                Path outputPath;
                 while (entries.hasMoreElements()) {
                     ZipEntry entry = entries.nextElement();
                     if (!entry.isDirectory() && entry.getName().endsWith(".tiny")) {
+                        Path outputPath = Files.createTempFile("yarn-tiny-", ".tiny");
                         try (InputStream inputStream = zipFile.getInputStream(entry)) {
-                            outputPath = outputDir.resolve(targetFileName);
                             Files.copy(inputStream, outputPath, StandardCopyOption.REPLACE_EXISTING);
                         }
                         return outputPath;
@@ -93,10 +79,10 @@ public class YarnDownloading {
                 }
             }
         } catch (Exception e) {
-            Main.print("Error during extracting file: " + e.getMessage(), true);
+            System.err.println("[YarnDownloading] Error extracting file: " + e.getMessage());
             return null;
         }
-        Main.print("File " + targetFileName + " cannot be found in " + zipPath, true);
+        System.err.println("[YarnDownloading] File " + targetFileName + " not found in " + zipPath);
         return null;
     }
 
@@ -122,18 +108,15 @@ public class YarnDownloading {
             URI uri = new URI("https://meta.fabricmc.net/v2/versions/yarn/" + minecraftVersion);
             HttpClient httpClient = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder().uri(uri).GET().build();
-
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            String responseBody = response.body();
 
             Pattern pattern = Pattern.compile("\"build\":\\s*(\\d+)");
-            Matcher matcher = pattern.matcher(responseBody);
-
+            Matcher matcher = pattern.matcher(response.body());
             while (matcher.find()) {
                 builds.add(Integer.parseInt(matcher.group(1)));
             }
         } catch (Exception e) {
-            Main.print("Error during getting the latest mappings build: " + e.getMessage(), true);
+            System.err.println("[YarnDownloading] Error getting yarn builds: " + e.getMessage());
         }
         return builds;
     }
