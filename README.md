@@ -1,6 +1,7 @@
 preview:
-<img width="1263" height="801" alt="image" src="https://github.com/user-attachments/assets/2299b02e-3f84-4150-b863-9d9a550159d6" />
-<img width="1919" height="1006" alt="image" src="https://github.com/user-attachments/assets/0e23d2f1-f198-44b3-a737-acdaa378e57b" />
+<img width="1919" height="1019" alt="image" src="https://github.com/user-attachments/assets/a899394c-40f8-405e-907d-ee57edce671a" />
+<img width="510" height="511" alt="image" src="https://github.com/user-attachments/assets/61e5fa80-d497-4126-ab60-b8d0c55b9f1e" />
+<img width="1614" height="852" alt="image" src="https://github.com/user-attachments/assets/4fc8c318-5474-4eea-bd9c-17a32b0f5938" />
 
 # MJRManager
 
